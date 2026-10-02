@@ -205,6 +205,92 @@ function rewriteHtml(html: string, pageUrl: URL): string {
     return `${attr}="${resolveAndProxy(rawVal, activeBase)}"`;
   });
 
+  // 7. Patch Remix context to prevent client hydration reload loop
+  rewritten = rewritten.replace(
+    /(<script\b[^>]*\b(?:data-ttark|id)=["']__remixContext["'][^>]*>)([\s\S]*?)(<\/script>)/gi,
+    (_m, openTag, content, closeTag) => {
+      try {
+        const decoded = decodeURIComponent(content);
+        const ctx = JSON.parse(decoded);
+        ctx.url = "/proxy";
+        ctx.isSpaMode = true;
+        return `${openTag}${encodeURIComponent(JSON.stringify(ctx))}${closeTag}`;
+      } catch {
+        return _m;
+      }
+    }
+  );
+
+  // 8. Inject client-side runtime shim for SPA hydration and fetch interception
+  const targetBase = pageUrl.toString();
+  const shim = `<script id="__routex_shim__">
+(function(){
+  var TB = ${JSON.stringify(targetBase)};
+  var reloads = 0;
+  var _r = window.location.reload;
+  window.location.reload = function(){
+    reloads++;
+    if (reloads > 1) {
+      console.warn("RouteX: Suppressed client reload loop.");
+      return;
+    }
+    return _r.apply(this, arguments);
+  };
+
+  // Intercept window.__remixContext assignments to guarantee url matches pathname
+  var _rcVal = undefined;
+  try {
+    Object.defineProperty(window, '__remixContext', {
+      configurable: true,
+      enumerable: true,
+      get: function() { return _rcVal; },
+      set: function(v) {
+        if (v && typeof v === 'object') {
+          v.url = window.location.pathname;
+          v.isSpaMode = true;
+        }
+        _rcVal = v;
+      }
+    });
+  } catch(e){}
+
+  var _f = window.fetch;
+  if (_f) {
+    window.fetch = function(input, init) {
+      try {
+        if (typeof input === 'string') {
+          if (!input.startsWith('/proxy?url=') && !input.startsWith('data:') && !input.startsWith('blob:') && !input.startsWith('javascript:')) {
+            input = '/proxy?url=' + encodeURIComponent(new URL(input, TB).toString());
+          }
+        } else if (input && input.url && !input.url.includes('/proxy?url=')) {
+          input = new Request('/proxy?url=' + encodeURIComponent(new URL(input.url, TB).toString()), input);
+        }
+      } catch(e){}
+      return _f.call(this, input, init);
+    };
+  }
+  var _xhr = window.XMLHttpRequest;
+  if (_xhr && _xhr.prototype) {
+    var _o = _xhr.prototype.open;
+    _xhr.prototype.open = function(m, u) {
+      try {
+        if (typeof u === 'string' && !u.startsWith('/proxy?url=') && !u.startsWith('data:') && !u.startsWith('blob:')) {
+          u = '/proxy?url=' + encodeURIComponent(new URL(u, TB).toString());
+          arguments[1] = u;
+        }
+      } catch(e){}
+      return _o.apply(this, arguments);
+    };
+  }
+})();
+</script>`;
+
+  if (/<head\b[^>]*>/i.test(rewritten)) {
+    rewritten = rewritten.replace(/<head\b([^>]*)>/i, `<head$1>${shim}`);
+  } else {
+    rewritten = shim + rewritten;
+  }
+
   return rewritten;
 }
 
@@ -382,13 +468,26 @@ export default {
       return proxy(request);
     }
 
-    if (url.pathname.startsWith("/api/")) {
-      return Response.json({
-        service: "RouteX",
-        stateless: true,
-        storage: "none",
-        endpoints: ["/health", "/proxy?url=https://example.com"],
-      });
+    // Serve known static assets
+    if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/styles.css" || url.pathname === "/app.js") {
+      return env.ASSETS.fetch(request);
+    }
+
+    // Fallback: If a client-side SPA or browser sends a relative request without /proxy,
+    // check the Referer header to identify the parent proxied target.
+    const referer = request.headers.get("Referer");
+    if (referer) {
+      try {
+        const refUrl = new URL(referer);
+        const parentTarget = refUrl.searchParams.get("url");
+        if (parentTarget) {
+          const resolved = new URL(url.pathname + url.search, parentTarget);
+          const proxiedUrl = new URL(request.url);
+          proxiedUrl.pathname = "/proxy";
+          proxiedUrl.search = `?url=${encodeURIComponent(resolved.toString())}`;
+          return proxy(new Request(proxiedUrl.toString(), request));
+        }
+      } catch {}
     }
 
     return env.ASSETS.fetch(request);
