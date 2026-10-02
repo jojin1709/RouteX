@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "description": "Stateless privacy-focused web gateway for Cloudflare Workers.",
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types test/test-suite.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",

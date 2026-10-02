@@ -1,340 +1,41 @@
-interface Env {
-  ASSETS: Fetcher;
-}
+/**
+ * RouteX — Stateless Cloudflare Web Gateway
+ *
+ * Architecture:
+ * - Stateless HTTP/HTTPS proxy running on Cloudflare Workers + Workers Assets.
+ * - Comprehensive SSRF protection (private/loopback IPv4/IPv6, internal hosts, protocol restrictions).
+ * - Full HTML/CSS URL rewriting (links, scripts, images, srcset, media, GET forms, CSS @import & url()).
+ * - Direct binary streaming for images, fonts, scripts, audio, video, PDFs, and JSON/XML.
+ * - Multi-hop redirect handling with location header rewriting.
+ * - Integrated diagnostics engine and stateless inspector tools.
+ * - Optional Cloudflare Workers Browser Rendering hooks.
+ * - Optional Cloudflare Turnstile token validation hooks.
+ * - Zero persistent storage (No D1, KV, R2, Durable Objects, cookies, or user logs).
+ */
 
-const BLOCKED_HOSTS = new Set([
-  "localhost",
-  "localhost.localdomain",
-  "ip6-localhost",
-  "ip6-loopback",
-  "metadata.google.internal",
-  "metadata",
-]);
-
-function isIPv4(host: string): boolean {
-  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
-}
-
-function ipv4ToInt(host: string): number | null {
-  if (!isIPv4(host)) return null;
-  const parts = host.split(".").map(Number);
-  if (parts.some((n) => n < 0 || n > 255)) return null;
-  return (((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256 + parts[3]) >>> 0;
-}
-
-function isPrivateIPv4(host: string): boolean {
-  const n = ipv4ToInt(host);
-  if (n === null) return false;
-  const ranges: Array<[number, number]> = [
-    [0x00000000, 0x00ffffff], // 0.0.0.0/8
-    [0x0a000000, 0x0affffff], // 10.0.0.0/8
-    [0x64400000, 0x647fffff], // 100.64.0.0/10
-    [0x7f000000, 0x7fffffff], // 127.0.0.0/8
-    [0xa9fe0000, 0xa9feffff], // 169.254.0.0/16
-    [0xac100000, 0xac1fffff], // 172.16.0.0/12
-    [0xc0000000, 0xc0ffffff], // 192.0.0.0/24
-    [0xc0a80000, 0xc0a8ffff], // 192.168.0.0/16
-    [0xc6120000, 0xc613ffff], // 198.18.0.0/15
-    [0xe0000000, 0xffffffff], // multicast/reserved
-  ];
-  return ranges.some(([start, end]) => n >= start && n <= end);
-}
-
-function isBlockedHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/\.$/, "");
-  if (BLOCKED_HOSTS.has(host)) return true;
-  if (isPrivateIPv4(host)) return true;
-  if (host.includes(":") && host.startsWith("[")) return true; // IPv6 literals
-  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) return true;
-  return false;
-}
-
-function normalizeTarget(raw: string): URL {
-  if (!raw || raw.length > 4096) throw new Error("Invalid URL.");
-  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  const url = new URL(candidate);
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS URLs are supported.");
-  if (isBlockedHostname(url.hostname)) throw new Error("This destination is not allowed.");
-  url.username = "";
-  url.password = "";
-  return url;
-}
-
-function gatewayUrl(target: URL): string {
-  return `/proxy?url=${encodeURIComponent(target.toString())}`;
-}
+import { handleBrowserTool, isBrowserRenderingAvailable } from "./browser.ts";
+import { runDiagnostics } from "./diagnostics.ts";
+import { buildResponseHeaders, gatewayUrl, rewriteCss, rewriteHtml } from "./rewriter.ts";
+import { MAX_HTML_SIZE_BYTES, normalizeTarget } from "./security.ts";
+import {
+  checkSecurityHeaders,
+  extractLinks,
+  formatJson,
+  inspectHeaders,
+  parseSitemap,
+  responseInfo,
+  traceRedirects,
+  viewRobots,
+  viewXml,
+} from "./tools.ts";
+import { verifyTurnstileToken } from "./turnstile.ts";
+import type { Env } from "./types.ts";
 
 /**
- * Resolves a raw URL against a base URL and converts to gateway proxy URL.
- * Prevents double-proxying and ignores non-http(s) schemes.
+ * Handles incoming web proxy requests.
  */
-function resolveAndProxy(rawUrl: string, baseUrl: URL): string {
-  if (!rawUrl) return rawUrl;
-  const v = rawUrl.trim();
-  if (!v || v.startsWith("#") || /^(?:javascript|data|blob|mailto|tel|about|urn):/i.test(v)) {
-    return v;
-  }
-
-  // Prevent double-proxying for relative gateway paths
-  if (v.startsWith("/proxy?url=") || v.startsWith("proxy?url=")) {
-    return v.startsWith("/") ? v : `/${v}`;
-  }
-
-  try {
-    const resolved = new URL(v, baseUrl);
-    if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
-      return v;
-    }
-    // Prevent double-proxying for absolute gateway URLs
-    if (resolved.pathname === "/proxy" && resolved.searchParams.has("url")) {
-      return `/proxy?url=${encodeURIComponent(resolved.searchParams.get("url")!)}`;
-    }
-    if (isBlockedHostname(resolved.hostname)) {
-      return v;
-    }
-    resolved.username = "";
-    resolved.password = "";
-    return gatewayUrl(resolved);
-  } catch {
-    return v;
-  }
-}
-
-/**
- * Rewrites srcset attributes containing comma-separated URLs with optional descriptors.
- */
-function rewriteSrcset(srcsetValue: string, baseUrl: URL): string {
-  if (!srcsetValue) return srcsetValue;
-  const candidates = srcsetValue.split(/,(?=\s*\S)/);
-  return candidates
-    .map((candidate) => {
-      const trimmed = candidate.trim();
-      if (!trimmed) return trimmed;
-      const parts = trimmed.split(/\s+/);
-      const urlPart = parts[0];
-      const descriptor = parts.slice(1).join(" ");
-      const proxiedUrl = resolveAndProxy(urlPart, baseUrl);
-      return descriptor ? `${proxiedUrl} ${descriptor}` : proxiedUrl;
-    })
-    .join(", ");
-}
-
-/**
- * Rewrites url(...) and @import in CSS content relative to the CSS file's own URL.
- */
-function rewriteCss(css: string, cssUrl: URL): string {
-  if (!css) return css;
-
-  // 1. url(...) with optional quotes
-  const urlPattern = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi;
-  let rewritten = css.replace(urlPattern, (m, dQuote, sQuote, unquoted) => {
-    const rawVal = (dQuote ?? sQuote ?? unquoted ?? "").trim();
-    if (!rawVal || rawVal.startsWith("#") || /^(?:data|blob):/i.test(rawVal)) {
-      return m;
-    }
-    const proxied = resolveAndProxy(rawVal, cssUrl);
-    return `url("${proxied}")`;
-  });
-
-  // 2. @import "..." and @import '...' (excluding @import url(...) already handled)
-  const importPattern = /@import\s+(?:"([^"]+)"|'([^']+)')/gi;
-  rewritten = rewritten.replace(importPattern, (_m, dQuote, sQuote) => {
-    const rawVal = (dQuote ?? sQuote ?? "").trim();
-    if (!rawVal) return _m;
-    const proxied = resolveAndProxy(rawVal, cssUrl);
-    return `@import "${proxied}"`;
-  });
-
-  return rewritten;
-}
-
-/**
- * Rewrites HTML navigation and resource links.
- */
-function rewriteHtml(html: string, pageUrl: URL): string {
-  let activeBase = pageUrl;
-
-  // 1. Check for existing <base href="...">
-  const baseTagMatch = html.match(/<base\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/i);
-  if (baseTagMatch) {
-    const rawBase = (baseTagMatch[1] ?? baseTagMatch[2] ?? baseTagMatch[3] ?? "").trim();
-    if (rawBase) {
-      try {
-        activeBase = new URL(rawBase, pageUrl);
-      } catch {}
-    }
-  }
-
-  // 2. Rewrite <style>...</style> blocks
-  let rewritten = html.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_m, attrs, content) => {
-    return `<style${attrs}>${rewriteCss(content, activeBase)}</style>`;
-  });
-
-  // 3. Rewrite inline style="..." attributes
-  rewritten = rewritten.replace(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi, (_m, dQuote, sQuote) => {
-    const rawStyle = dQuote ?? sQuote ?? "";
-    const quote = dQuote !== undefined ? '"' : "'";
-    return `style=${quote}${rewriteCss(rawStyle, activeBase)}${quote}`;
-  });
-
-  // 4. Rewrite srcset attributes
-  rewritten = rewritten.replace(/\bsrcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi, (_m, dQuote, sQuote, unquoted) => {
-    const rawVal = dQuote ?? sQuote ?? unquoted ?? "";
-    return `srcset="${rewriteSrcset(rawVal, activeBase)}"`;
-  });
-
-  // 5. Rewrite form action ONLY for GET forms (or forms with unspecified method)
-  rewritten = rewritten.replace(/<form\b([^>]*?)>/gi, (formTag, attrs) => {
-    if (/\bmethod\s*=\s*["']?post\b/i.test(attrs)) {
-      return formTag;
-    }
-    const rewrittenAttrs = attrs.replace(/\baction\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi, (_a: string, d: string, s: string, u: string) => {
-      const rawVal = (d ?? s ?? u ?? "").trim();
-      return `action="${resolveAndProxy(rawVal, activeBase)}"`;
-    });
-    return `<form${rewrittenAttrs}>`;
-  });
-
-  // 6. Rewrite standard resource and navigation attributes: href, src, poster
-  const attrPattern = /\b(href|src|poster)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
-  rewritten = rewritten.replace(attrPattern, (m, attr: string, dQuote?: string, sQuote?: string, unquoted?: string) => {
-    const rawVal = (dQuote ?? sQuote ?? unquoted ?? "").trim();
-    if (!rawVal || rawVal.startsWith("#") || /^(?:javascript|data|blob|mailto|tel):/i.test(rawVal)) {
-      return m;
-    }
-    return `${attr}="${resolveAndProxy(rawVal, activeBase)}"`;
-  });
-
-  // 7. Patch Remix context to prevent client hydration reload loop
-  rewritten = rewritten.replace(
-    /(<script\b[^>]*\b(?:data-ttark|id)=["']__remixContext["'][^>]*>)([\s\S]*?)(<\/script>)/gi,
-    (_m, openTag, content, closeTag) => {
-      try {
-        const decoded = decodeURIComponent(content);
-        const ctx = JSON.parse(decoded);
-        ctx.url = "/proxy";
-        ctx.isSpaMode = true;
-        return `${openTag}${encodeURIComponent(JSON.stringify(ctx))}${closeTag}`;
-      } catch {
-        return _m;
-      }
-    }
-  );
-
-  // 8. Inject client-side runtime shim for SPA hydration and fetch interception
-  const targetBase = pageUrl.toString();
-  const shim = `<script id="__routex_shim__">
-(function(){
-  var TB = ${JSON.stringify(targetBase)};
-  var reloads = 0;
-  var _r = window.location.reload;
-  window.location.reload = function(){
-    reloads++;
-    if (reloads > 1) {
-      console.warn("RouteX: Suppressed client reload loop.");
-      return;
-    }
-    return _r.apply(this, arguments);
-  };
-
-  // Intercept window.__remixContext assignments to guarantee url matches pathname
-  var _rcVal = undefined;
-  try {
-    Object.defineProperty(window, '__remixContext', {
-      configurable: true,
-      enumerable: true,
-      get: function() { return _rcVal; },
-      set: function(v) {
-        if (v && typeof v === 'object') {
-          v.url = window.location.pathname;
-          v.isSpaMode = true;
-        }
-        _rcVal = v;
-      }
-    });
-  } catch(e){}
-
-  var _f = window.fetch;
-  if (_f) {
-    window.fetch = function(input, init) {
-      try {
-        if (typeof input === 'string') {
-          if (!input.startsWith('/proxy?url=') && !input.startsWith('data:') && !input.startsWith('blob:') && !input.startsWith('javascript:')) {
-            input = '/proxy?url=' + encodeURIComponent(new URL(input, TB).toString());
-          }
-        } else if (input && input.url && !input.url.includes('/proxy?url=')) {
-          input = new Request('/proxy?url=' + encodeURIComponent(new URL(input.url, TB).toString()), input);
-        }
-      } catch(e){}
-      return _f.call(this, input, init);
-    };
-  }
-  var _xhr = window.XMLHttpRequest;
-  if (_xhr && _xhr.prototype) {
-    var _o = _xhr.prototype.open;
-    _xhr.prototype.open = function(m, u) {
-      try {
-        if (typeof u === 'string' && !u.startsWith('/proxy?url=') && !u.startsWith('data:') && !u.startsWith('blob:')) {
-          u = '/proxy?url=' + encodeURIComponent(new URL(u, TB).toString());
-          arguments[1] = u;
-        }
-      } catch(e){}
-      return _o.apply(this, arguments);
-    };
-  }
-})();
-</script>`;
-
-  if (/<head\b[^>]*>/i.test(rewritten)) {
-    rewritten = rewritten.replace(/<head\b([^>]*)>/i, `<head$1>${shim}`);
-  } else {
-    rewritten = shim + rewritten;
-  }
-
-  return rewritten;
-}
-
-/**
- * Filter and augment upstream response headers safely.
- */
-function responseHeaders(source: Response, isRewrittenText: boolean): Headers {
-  const h = new Headers();
-  const allowed = [
-    "content-type",
-    "content-language",
-    "cache-control",
-    "etag",
-    "last-modified",
-    "expires",
-    "vary",
-    "accept-ranges",
-  ];
-  for (const name of allowed) {
-    const value = source.headers.get(name);
-    if (value) h.set(name, value);
-  }
-
-  // Preserve content-length and content-encoding only when the body is untouched
-  if (!isRewrittenText) {
-    const cl = source.headers.get("content-length");
-    if (cl) h.set("content-length", cl);
-    const ce = source.headers.get("content-encoding");
-    if (ce) h.set("content-encoding", ce);
-  }
-
-  h.set("X-RouteX-Gateway", "1");
-  h.set("X-Content-Type-Options", "nosniff");
-  h.set("Referrer-Policy", "no-referrer");
-
-  // Allow cross-origin asset loading for proxied sub-resources
-  h.set("Access-Control-Allow-Origin", "*");
-  h.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  h.set("Access-Control-Allow-Headers", "*");
-
-  return h;
-}
-
-async function proxy(request: Request): Promise<Response> {
+async function proxy(request: Request, _env: Env): Promise<Response> {
+  // 1. CORS Preflight
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -348,23 +49,41 @@ async function proxy(request: Request): Promise<Response> {
     });
   }
 
+  // 2. HTTP Method restriction
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response("Method not allowed. RouteX supports GET and HEAD requests.", { status: 405 });
+    return new Response("Method not allowed. RouteX supports GET, HEAD, and OPTIONS requests.", {
+      status: 405,
+      headers: {
+        Allow: "GET, HEAD, OPTIONS",
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-RouteX-Gateway": "1",
+      },
+    });
   }
 
+  // 3. Extract and validate target URL
   const incoming = new URL(request.url);
-  const raw = incoming.searchParams.get("url");
-  if (!raw) return new Response("Missing url parameter.", { status: 400 });
+  const rawTarget = incoming.searchParams.get("url");
+  if (!rawTarget) {
+    return new Response("Missing required 'url' parameter. Example: /proxy?url=https://example.com", {
+      status: 400,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "X-RouteX-Gateway": "1" },
+    });
+  }
 
   let target: URL;
   try {
-    target = normalizeTarget(raw);
+    target = normalizeTarget(rawTarget);
   } catch (error) {
-    return new Response(error instanceof Error ? error.message : "Invalid URL.", { status: 400 });
+    return new Response(error instanceof Error ? error.message : "Invalid destination URL.", {
+      status: 400,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "X-RouteX-Gateway": "1" },
+    });
   }
 
-  const headers = new Headers();
-  const forwardHeaders = [
+  // 4. Construct sanitized upstream request headers
+  const forwardHeaders = new Headers();
+  const safeHeaderNames = [
     "Accept",
     "Accept-Language",
     "Sec-CH-UA",
@@ -374,81 +93,116 @@ async function proxy(request: Request): Promise<Response> {
     "Sec-Fetch-Mode",
     "Sec-Fetch-Site",
   ];
-  for (const name of forwardHeaders) {
+  for (const name of safeHeaderNames) {
     const val = request.headers.get(name);
-    if (val) headers.set(name, val);
+    if (val) forwardHeaders.set(name, val);
   }
 
+  // Forward client User-Agent or default to standard desktop browser
   const clientUa = request.headers.get("User-Agent");
-  headers.set(
+  forwardHeaders.set(
     "User-Agent",
     clientUa && !clientUa.includes("RouteX")
       ? clientUa
       : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
   );
-  headers.set("Referer", `${target.origin}/`);
 
+  // Set Referer to target origin to avoid anti-hotlinking CDN blocks
+  forwardHeaders.set("Referer", `${target.origin}/`);
+
+  // 5. Fetch upstream target with manual redirect handling
   let upstream: Response;
   try {
     upstream = await fetch(target.toString(), {
       method: request.method,
-      headers,
+      headers: forwardHeaders,
       redirect: "manual",
       cf: { cacheTtl: 0, cacheEverything: false },
     });
   } catch {
-    return new Response("The destination could not be reached.", { status: 502 });
+    return new Response("The destination could not be reached or timed out.", {
+      status: 502,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "X-RouteX-Gateway": "1" },
+    });
   }
 
-  // Handle redirects (301, 302, 303, 307, 308)
+  // 6. Upstream redirect handling (301, 302, 303, 307, 308)
   if ([301, 302, 303, 307, 308].includes(upstream.status)) {
-    const loc = upstream.headers.get("Location");
-    if (loc) {
+    const location = upstream.headers.get("Location");
+    if (location) {
       try {
-        const resolvedLoc = new URL(loc, target);
-        const redHeaders = responseHeaders(upstream, false);
-        redHeaders.set("Location", gatewayUrl(resolvedLoc));
+        const resolvedLocation = new URL(location, target);
+        const redirectHeaders = buildResponseHeaders(upstream, false);
+        redirectHeaders.set("Location", gatewayUrl(resolvedLocation));
         return new Response(null, {
           status: upstream.status,
           statusText: upstream.statusText,
-          headers: redHeaders,
+          headers: redirectHeaders,
         });
       } catch {
-        return new Response("Invalid redirect location from upstream.", { status: 502 });
+        return new Response("Invalid redirect location returned by upstream destination.", {
+          status: 502,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "X-RouteX-Gateway": "1" },
+        });
       }
     }
   }
 
-  const contentType = (upstream.headers.get("content-type") || "").toLowerCase();
+  const rawContentType = (upstream.headers.get("content-type") || "").toLowerCase();
 
-  // HTML Rewriting
-  if ((contentType.includes("text/html") || contentType.includes("application/xhtml+xml")) && request.method === "GET") {
-    const html = await upstream.text();
-    const rewritten = rewriteHtml(html, target);
-    const outHeaders = responseHeaders(upstream, true);
+  // 7. HTML URL Rewriting
+  if ((rawContentType.includes("text/html") || rawContentType.includes("application/xhtml+xml")) && request.method === "GET") {
+    const contentLength = Number(upstream.headers.get("content-length") || 0);
+
+    // If document exceeds max processing size, stream directly to prevent worker memory exhaustion
+    if (contentLength > MAX_HTML_SIZE_BYTES) {
+      const outHeaders = buildResponseHeaders(upstream, false);
+      return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: outHeaders,
+      });
+    }
+
+    const htmlText = await upstream.text();
+    const rewrittenHtml = rewriteHtml(htmlText, target);
+    const outHeaders = buildResponseHeaders(upstream, true);
     outHeaders.set("Content-Type", "text/html; charset=utf-8");
-    return new Response(rewritten, {
+
+    return new Response(rewrittenHtml, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: outHeaders,
     });
   }
 
-  // CSS Rewriting
-  if (contentType.includes("text/css") && request.method === "GET") {
-    const css = await upstream.text();
-    const rewritten = rewriteCss(css, target);
-    const outHeaders = responseHeaders(upstream, true);
+  // 8. CSS URL Rewriting
+  if (rawContentType.includes("text/css") && request.method === "GET") {
+    const contentLength = Number(upstream.headers.get("content-length") || 0);
+
+    if (contentLength > MAX_HTML_SIZE_BYTES) {
+      const outHeaders = buildResponseHeaders(upstream, false);
+      return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: outHeaders,
+      });
+    }
+
+    const cssText = await upstream.text();
+    const rewrittenCss = rewriteCss(cssText, target);
+    const outHeaders = buildResponseHeaders(upstream, true);
     outHeaders.set("Content-Type", "text/css; charset=utf-8");
-    return new Response(rewritten, {
+
+    return new Response(rewrittenCss, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: outHeaders,
     });
   }
 
-  // Binary, JavaScript, fonts, media, and JSON: return untouched stream directly
-  const outHeaders = responseHeaders(upstream, false);
+  // 9. Binary, JavaScript, fonts, media, PDF, and JSON: direct passthrough stream
+  const outHeaders = buildResponseHeaders(upstream, false);
   return new Response(request.method === "HEAD" ? null : upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
@@ -459,33 +213,161 @@ async function proxy(request: Request): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const pathname = url.pathname;
 
-    if (url.pathname === "/health") {
-      return Response.json({ ok: true, service: "RouteX", storage: "none" });
+    // --- Core Endpoints ---
+    if (pathname === "/health") {
+      return Response.json({
+        ok: true,
+        service: "RouteX Web Gateway",
+        stateless: true,
+        storage: "none",
+        browserRenderingAvailable: isBrowserRenderingAvailable(env),
+      });
     }
 
-    if (url.pathname === "/proxy") {
-      return proxy(request);
+    if (pathname === "/proxy") {
+      return proxy(request, env);
     }
 
-    // Serve known static assets
-    if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/styles.css" || url.pathname === "/app.js") {
+    // --- Phase 4: RouteX Diagnostics ---
+    if (pathname === "/diagnostics" || pathname === "/api/diagnostics") {
+      const target = url.searchParams.get("url");
+      if (!target) {
+        return Response.json(
+          { ok: false, error: "Missing required 'url' query parameter. Example: /diagnostics?url=https://example.com" },
+          { status: 400 }
+        );
+      }
+      const report = await runDiagnostics(target);
+      return Response.json(report);
+    }
+
+    // --- Phase 5: Stateless Inspector Tools ---
+    if (pathname.startsWith("/api/tools/")) {
+      const target = url.searchParams.get("url");
+      if (!target) {
+        return Response.json({ ok: false, error: "Missing required 'url' parameter." }, { status: 400 });
+      }
+
+      try {
+        switch (pathname) {
+          case "/api/tools/headers":
+            return Response.json(await inspectHeaders(target));
+          case "/api/tools/security-headers":
+            return Response.json(await checkSecurityHeaders(target));
+          case "/api/tools/redirects":
+            return Response.json(await traceRedirects(target));
+          case "/api/tools/links":
+            return Response.json(await extractLinks(target));
+          case "/api/tools/robots":
+            return Response.json(await viewRobots(target));
+          case "/api/tools/sitemap":
+            return Response.json(await parseSitemap(target));
+          case "/api/tools/json":
+            return Response.json(await formatJson(target));
+          case "/api/tools/xml":
+            return Response.json(await viewXml(target));
+          case "/api/tools/response-info":
+            return Response.json(await responseInfo(target));
+          default:
+            return Response.json({ ok: false, error: "Unknown inspector tool endpoint." }, { status: 404 });
+        }
+      } catch (err) {
+        return Response.json(
+          { ok: false, error: err instanceof Error ? err.message : "Tool processing error." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // --- Phase 3: Turnstile Verification Endpoint ---
+    if (pathname === "/api/turnstile/verify") {
+      if (request.method !== "POST" && request.method !== "GET") {
+        return new Response("Method not allowed. Use GET or POST.", { status: 405 });
+      }
+      const token = url.searchParams.get("token") || request.headers.get("cf-turnstile-response");
+      if (!token) {
+        return Response.json({ ok: false, error: "Missing Turnstile challenge token." }, { status: 400 });
+      }
+      const clientIp = request.headers.get("cf-connecting-ip");
+      const result = await verifyTurnstileToken(token, clientIp, env);
+      return Response.json(result);
+    }
+
+    // --- Phase 6: Optional Browser Tools ---
+    if (pathname.startsWith("/api/browser/")) {
+      if (pathname === "/api/browser/info") {
+        return Response.json({
+          available: isBrowserRenderingAvailable(env),
+          note: "Optional diagnostic tool with Free-tier platform quotas.",
+        });
+      }
+      if (pathname === "/api/browser/screenshot") {
+        return handleBrowserTool(request, env, "screenshot");
+      }
+      if (pathname === "/api/browser/pdf") {
+        return handleBrowserTool(request, env, "pdf");
+      }
+      if (pathname === "/api/browser/rendered-html") {
+        return handleBrowserTool(request, env, "rendered-html");
+      }
+    }
+
+    // --- API Directory ---
+    if (pathname === "/api" || pathname === "/api/") {
+      return Response.json({
+        service: "RouteX Web Gateway",
+        stateless: true,
+        storage: "none",
+        endpoints: {
+          core: ["/health", "/proxy?url=https://example.com"],
+          diagnostics: ["/diagnostics?url=https://example.com"],
+          inspectorTools: [
+            "/api/tools/headers?url=https://example.com",
+            "/api/tools/security-headers?url=https://example.com",
+            "/api/tools/redirects?url=https://example.com",
+            "/api/tools/links?url=https://example.com",
+            "/api/tools/robots?url=https://example.com",
+            "/api/tools/sitemap?url=https://example.com",
+            "/api/tools/json?url=https://httpbin.org/json",
+            "/api/tools/xml?url=https://httpbin.org/xml",
+            "/api/tools/response-info?url=https://example.com",
+          ],
+          abuseControl: ["/api/turnstile/verify?token=..."],
+          browserTools: [
+            "/api/browser/info",
+            "/api/browser/screenshot?url=https://example.com",
+            "/api/browser/pdf?url=https://example.com",
+            "/api/browser/rendered-html?url=https://example.com",
+          ],
+        },
+      });
+    }
+
+    // --- Static Frontend Assets in public/ ---
+    if (
+      pathname === "/" ||
+      pathname === "/index.html" ||
+      pathname === "/styles.css" ||
+      pathname === "/app.js" ||
+      pathname === "/favicon.ico"
+    ) {
       return env.ASSETS.fetch(request);
     }
 
-    // Fallback: If a client-side SPA or browser sends a relative request without /proxy,
-    // check the Referer header to identify the parent proxied target.
+    // --- Fallback: Dynamic subresource request routing via HTTP Referer ---
     const referer = request.headers.get("Referer");
     if (referer) {
       try {
         const refUrl = new URL(referer);
         const parentTarget = refUrl.searchParams.get("url");
         if (parentTarget) {
-          const resolved = new URL(url.pathname + url.search, parentTarget);
+          const resolved = new URL(pathname + url.search, parentTarget);
           const proxiedUrl = new URL(request.url);
           proxiedUrl.pathname = "/proxy";
           proxiedUrl.search = `?url=${encodeURIComponent(resolved.toString())}`;
-          return proxy(new Request(proxiedUrl.toString(), request));
+          return proxy(new Request(proxiedUrl.toString(), request), env);
         }
       } catch {}
     }
