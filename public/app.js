@@ -50,19 +50,64 @@
   const proxyForm = document.getElementById('proxyForm');
   const proxyInput = document.getElementById('proxyUrl');
   const proxyError = document.getElementById('proxyError');
+  const proxyRawCheck = document.getElementById('proxyRawCheck');
+  const proxyMobileCheck = document.getElementById('proxyMobileCheck');
+  const copyProxyLinkBtn = document.getElementById('copyProxyLinkBtn');
+
+  function buildProxyUrl(rawVal) {
+    const validated = sanitizeInputUrl(rawVal);
+    if (!validated) return null;
+    let url = `/proxy?url=${encodeURIComponent(validated)}`;
+    if (proxyRawCheck && proxyRawCheck.checked) url += '&raw=true';
+    if (proxyMobileCheck && proxyMobileCheck.checked) url += '&ua=mobile';
+    return url;
+  }
 
   proxyForm.addEventListener('submit', (e) => {
     e.preventDefault();
     proxyError.hidden = true;
 
-    const validated = sanitizeInputUrl(proxyInput.value);
-    if (!validated) {
+    const proxyUrl = buildProxyUrl(proxyInput.value);
+    if (!proxyUrl) {
       proxyError.textContent = 'Please enter a valid HTTP or HTTPS destination URL.';
       proxyError.hidden = false;
       return;
     }
 
-    window.location.href = `/proxy?url=${encodeURIComponent(validated)}`;
+    window.location.href = proxyUrl;
+  });
+
+  if (copyProxyLinkBtn) {
+    copyProxyLinkBtn.addEventListener('click', () => {
+      proxyError.hidden = true;
+      const proxyUrl = buildProxyUrl(proxyInput.value);
+      if (!proxyUrl) {
+        proxyError.textContent = 'Please enter a valid target URL first.';
+        proxyError.hidden = false;
+        return;
+      }
+      const fullUrl = window.location.origin + proxyUrl;
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        const orig = copyProxyLinkBtn.textContent;
+        copyProxyLinkBtn.textContent = 'Copied Link!';
+        setTimeout(() => { copyProxyLinkBtn.textContent = orig; }, 1600);
+      });
+    });
+  }
+
+  // Preset Chips Auto-Fill
+  document.querySelectorAll('.preset-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const targetId = chip.getAttribute('data-target');
+      const url = chip.getAttribute('data-url');
+      if (targetId && url) {
+        const input = document.getElementById(targetId);
+        if (input) {
+          input.value = url;
+          input.focus();
+        }
+      }
+    });
   });
 
   // --- 3. Diagnostics Tab ---

@@ -11,7 +11,7 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 [![Cloudflare Workers](https://img.shields.io/badge/Platform-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#zero-application-persistence)
-[![Tests Passing](https://img.shields.io/badge/Tests-131%2F131%20Passing-brightgreen.svg)](#automated-testing)
+[![Tests Passing](https://img.shields.io/badge/Tests-135%2F135%20Passing-brightgreen.svg)](#automated-testing)
 [![SSRF Protected](https://img.shields.io/badge/Security-Multi--Layer%20SSRF%20Defense-red.svg)](#security-model--ssrf-defense)
 [![Daytona Compatible](https://img.shields.io/badge/Compute-Daytona%20Sandboxes-blueviolet.svg)](#daytona-integration)
 
@@ -180,7 +180,7 @@ flowchart TD
     ROUTER -- "/health" --> HEALTH["Health Status & Capabilities"]
     ROUTER -- "/api/daytona/*" --> DAYTONA_STATUS["Daytona Status Check"]
     ROUTER -- "/api/tools/render|screenshot|pdf" --> DAYTONA_TOOL{"Daytona Configured?"}
-    ROUTER -- "/api/tools/*" --> TOOLS["9 Stateless Inspector Tools"]
+    ROUTER -- "/api/tools/*" --> TOOLS["11 Stateless Inspector Tools"]
     ROUTER -- "/diagnostics" --> DIAG["9-Probe Diagnostics Engine"]
     ROUTER -- "/api/browser/*" --> BROWSER{"Browser Rendering Binding?"}
     ROUTER -- "/proxy?url=..." --> SSRF{"SSRF & Security Shield"}
@@ -531,12 +531,16 @@ npm test
   [PASS] API Catalog: Includes core, diagnostics and inspector endpoint groups
   [PASS] API Catalog: Serves api.html when requested from a browser with Accept: text/html
   [PASS] API Catalog: Returns JSON directly via /api.json
+  [PASS] DNS Tool: SSRF loopback target rejected with 400 Bad Request
+  [PASS] DNS Tool: Returns DNS records structure for public domain
+  [PASS] TLS Tool: Non-HTTPS target flags isHttps=false
+  [PASS] Raw Passthrough: Attaches X-RouteX-Mode: raw-passthrough header
 
 ==================================================
   TEST SUMMARY
 ==================================================
-  TOTAL:  131 tests
-  PASSED: 131
+  TOTAL:  135 tests
+  PASSED: 135
   FAILED: 0
 
 All automated tests passed successfully!

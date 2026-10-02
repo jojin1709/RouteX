@@ -23,6 +23,8 @@ import {
   extractLinks,
   formatJson,
   inspectHeaders,
+  inspectTls,
+  lookupDns,
   parseSitemap,
   responseInfo,
   traceRedirects,
@@ -122,14 +124,28 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     if (val) forwardHeaders.set(name, val);
   }
 
-  // Forward client User-Agent or default to standard desktop browser
-  const clientUa = request.headers.get("User-Agent");
-  forwardHeaders.set(
-    "User-Agent",
-    clientUa && !clientUa.includes("RouteX")
-      ? clientUa
-      : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-  );
+  // User-Agent selection: check ?ua=mobile or ?ua=desktop
+  const uaMode = incoming.searchParams.get("ua");
+  if (uaMode === "mobile") {
+    forwardHeaders.set(
+      "User-Agent",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1"
+    );
+  } else if (uaMode === "desktop") {
+    forwardHeaders.set(
+      "User-Agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    );
+  } else {
+    // Forward client User-Agent or default to standard desktop browser
+    const clientUa = request.headers.get("User-Agent");
+    forwardHeaders.set(
+      "User-Agent",
+      clientUa && !clientUa.includes("RouteX")
+        ? clientUa
+        : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    );
+  }
 
   // Set Referer to target origin to avoid anti-hotlinking CDN blocks
   forwardHeaders.set("Referer", `${target.origin}/`);
@@ -177,7 +193,22 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
 
   const rawContentType = (upstream.headers.get("content-type") || "").toLowerCase();
 
-  // 7. HTML URL Rewriting
+  // 7. Raw Passthrough Mode: bypass rewriting if ?raw=true or ?raw=1
+  const isRaw = incoming.searchParams.get("raw") === "true" || incoming.searchParams.get("raw") === "1";
+  if (isRaw) {
+    const outHeaders = buildResponseHeaders(upstream, false);
+    outHeaders.set("X-RouteX-Mode", "raw-passthrough");
+    if (safeStatus !== upstream.status) {
+      outHeaders.set("X-Upstream-Status", String(upstream.status));
+    }
+    return new Response(request.method === "HEAD" ? null : upstream.body, {
+      status: safeStatus,
+      statusText: safeStatusText,
+      headers: outHeaders,
+    });
+  }
+
+  // 8. HTML URL Rewriting
   if ((rawContentType.includes("text/html") || rawContentType.includes("application/xhtml+xml")) && request.method === "GET") {
     const contentLength = Number(upstream.headers.get("content-length") || 0);
 
@@ -305,13 +336,17 @@ export default {
 
     // --- Phase 5: Stateless Inspector Tools ---
     if (pathname.startsWith("/api/tools/")) {
-      const target = url.searchParams.get("url");
+      const target = url.searchParams.get("url") || url.searchParams.get("domain");
       if (!target) {
-        return Response.json({ ok: false, error: "Missing required 'url' parameter." }, { status: 400 });
+        return Response.json({ ok: false, error: "Missing required 'url' or 'domain' parameter." }, { status: 400 });
       }
 
       try {
         switch (pathname) {
+          case "/api/tools/dns":
+            return Response.json(await lookupDns(target));
+          case "/api/tools/tls":
+            return Response.json(await inspectTls(target));
           case "/api/tools/headers":
             return Response.json(await inspectHeaders(target));
           case "/api/tools/security-headers":
@@ -398,6 +433,8 @@ export default {
             core: ["/health", "/proxy?url=https://example.com"],
             diagnostics: ["/diagnostics?url=https://example.com"],
             inspectorTools: [
+              "/api/tools/dns?domain=example.com",
+              "/api/tools/tls?url=https://example.com",
               "/api/tools/security-headers?url=https://example.com",
               "/api/tools/headers?url=https://example.com",
               "/api/tools/redirects?url=https://example.com",

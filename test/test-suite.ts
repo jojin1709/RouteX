@@ -526,6 +526,25 @@ async function runAllTests() {
   const apiDotJsonData = await apiDotJsonRes.json() as any;
   test("API Catalog: Returns JSON directly via /api.json", apiDotJsonRes.status === 200 && apiDotJsonData.service === "RouteX Web Gateway");
 
+  // --- Section 7: DNS-over-HTTPS, TLS Audit & Raw Mode ---
+  const dnsLoopbackReq = new Request("https://gateway/api/tools/dns?domain=127.0.0.1", { method: "GET" });
+  const dnsLoopbackRes = await worker.fetch(dnsLoopbackReq, regressionEnv);
+  test("DNS Tool: SSRF loopback target rejected with 400 Bad Request", dnsLoopbackRes.status === 400);
+
+  const dnsPublicReq = new Request("https://gateway/api/tools/dns?domain=example.com", { method: "GET" });
+  const dnsPublicRes = await worker.fetch(dnsPublicReq, regressionEnv);
+  const dnsPublicData = (await dnsPublicRes.json()) as any;
+  test("DNS Tool: Returns DNS records structure for public domain", dnsPublicRes.status === 200 && dnsPublicData.domain === "example.com" && Boolean(dnsPublicData.records));
+
+  const tlsHttpReq = new Request("https://gateway/api/tools/tls?url=http%3A%2F%2Fexample.com", { method: "GET" });
+  const tlsHttpRes = await worker.fetch(tlsHttpReq, regressionEnv);
+  const tlsHttpData = (await tlsHttpRes.json()) as any;
+  test("TLS Tool: Non-HTTPS target flags isHttps=false", tlsHttpRes.status === 200 && tlsHttpData.isHttps === false);
+
+  const rawReq = new Request("https://gateway/proxy?url=https%3A%2F%2Fexample.com&raw=true", { method: "GET" });
+  const rawRes = await worker.fetch(rawReq, regressionEnv);
+  test("Raw Passthrough: Attaches X-RouteX-Mode: raw-passthrough header", rawRes.headers.get("X-RouteX-Mode") === "raw-passthrough");
+
   // ----------------------------------------------------
   // TEST SUMMARY
   // ----------------------------------------------------

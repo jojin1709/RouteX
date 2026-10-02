@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="RouteX Web Gateway — Interactive REST API Catalog, Endpoint Documentation & Edge Playground.">
   <title>RouteX API Catalog & Interactive Documentation</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" href="/favicon.ico">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -83,6 +85,8 @@
                   <option value="/diagnostics" data-method="GET" data-param="url">GET /diagnostics?url={url}</option>
                 </optgroup>
                 <optgroup label="Stateless Inspector Tools">
+                  <option value="/api/tools/dns" data-method="GET" data-param="url">GET /api/tools/dns?domain={domain}</option>
+                  <option value="/api/tools/tls" data-method="GET" data-param="url">GET /api/tools/tls?url={url}</option>
                   <option value="/api/tools/security-headers" data-method="GET" data-param="url" selected>GET /api/tools/security-headers?url={url}</option>
                   <option value="/api/tools/headers" data-method="GET" data-param="url">GET /api/tools/headers?url={url}</option>
                   <option value="/api/tools/redirects" data-method="GET" data-param="url">GET /api/tools/redirects?url={url}</option>
@@ -108,6 +112,13 @@
             <div class="form-field form-btn-align">
               <button type="submit" id="runnerSubmitBtn" class="btn-primary">Execute Request &rarr;</button>
             </div>
+          </div>
+          <div class="preset-chips-row">
+            <span class="chips-label">Demo:</span>
+            <button type="button" class="preset-chip" data-target="runnerTargetUrl" data-url="https://cloudflare.com">cloudflare.com</button>
+            <button type="button" class="preset-chip" data-target="runnerTargetUrl" data-url="https://github.com">github.com</button>
+            <button type="button" class="preset-chip" data-target="runnerTargetUrl" data-url="https://httpbin.org/json">httpbin JSON</button>
+            <button type="button" class="preset-chip" data-target="runnerTargetUrl" data-url="https://example.com">example.com</button>
           </div>
         </form>
 
@@ -221,7 +232,37 @@
           <span class="badge-tag">Section 3</span>
           <h3>Stateless Security & Web Inspector APIs</h3>
         </div>
-        <div class="api-card-grid">
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/dns?domain={domain}</span>
+              </div>
+              <span class="badge-tag">DoH 1.1.1.1</span>
+            </div>
+            <div class="api-card-desc">Queries Cloudflare's native 1.1.1.1 DNS-over-HTTPS resolver statelessly to extract A, AAAA, MX, TXT, NS, and CNAME records with TTL and authoritative answers.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/dns" data-method="GET" data-url="cloudflare.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/dns?domain=cloudflare.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/dns?domain=cloudflare.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/tls?url={url}</span>
+              </div>
+              <span class="badge-tag">TLS Audit</span>
+            </div>
+            <div class="api-card-desc">Evaluates target SSL/TLS configuration, protocol version (TLS 1.2/1.3), HSTS max-age, subdomain inheritance, preload eligibility, and server security headers.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/tls" data-method="GET" data-url="https://cloudflare.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/tls?url=https://cloudflare.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/tls?url=https://cloudflare.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
 
           <div class="api-endpoint-card">
             <div class="api-card-header">
@@ -527,6 +568,21 @@
 
       runnerSelect.addEventListener("change", updateUrlVisibility);
       updateUrlVisibility();
+
+      // Preset chips auto-fill
+      document.querySelectorAll(".preset-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const targetId = chip.getAttribute("data-target");
+          const url = chip.getAttribute("data-url");
+          if (targetId && url) {
+            const el = document.getElementById(targetId);
+            if (el) {
+              el.value = url;
+              el.focus();
+            }
+          }
+        });
+      });
 
       document.querySelectorAll(".try-btn").forEach(btn => {
         btn.addEventListener("click", () => {

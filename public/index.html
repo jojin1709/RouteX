@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="RouteX — Professional Stateless HTTP/HTTPS Web Gateway & Security Diagnostics Dashboard.">
   <title>RouteX Dashboard — Gateway, Diagnostics & Inspector</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" href="/favicon.ico">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -46,6 +48,25 @@
             <input id="proxyUrl" name="url" type="text" inputmode="url" autocomplete="off" placeholder="https://example.com" spellcheck="false" required>
             <button type="submit" id="proxySubmitBtn" class="btn-primary">Open Gateway &rarr;</button>
           </div>
+          <div class="preset-chips-row">
+            <span class="chips-label">Demo:</span>
+            <button type="button" class="preset-chip" data-target="proxyUrl" data-url="https://en.wikipedia.org">Wikipedia</button>
+            <button type="button" class="preset-chip" data-target="proxyUrl" data-url="https://docs.python.org">Python Docs</button>
+            <button type="button" class="preset-chip" data-target="proxyUrl" data-url="https://www.w3.org">W3C</button>
+            <button type="button" class="preset-chip" data-target="proxyUrl" data-url="https://httpbin.org/json">httpbin JSON</button>
+            <button type="button" class="preset-chip" data-target="proxyUrl" data-url="https://example.com">example.com</button>
+          </div>
+          <div class="form-options-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="proxyRawCheck">
+              <span>Raw stream (no rewriting)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="proxyMobileCheck">
+              <span>Mobile User-Agent</span>
+            </label>
+            <button type="button" id="copyProxyLinkBtn" class="btn-secondary btn-sm" style="margin-left:auto;">Copy Proxy Link</button>
+          </div>
           <div id="proxyError" class="alert-box error" role="alert" hidden></div>
         </form>
 
@@ -78,6 +99,13 @@
             <span class="input-prefix">AUDIT</span>
             <input id="diagUrl" type="text" inputmode="url" autocomplete="off" placeholder="https://example.com" spellcheck="false" required>
             <button type="submit" id="diagSubmitBtn" class="btn-primary">Run Diagnostics</button>
+          </div>
+          <div class="preset-chips-row">
+            <span class="chips-label">Demo:</span>
+            <button type="button" class="preset-chip" data-target="diagUrl" data-url="https://example.com">example.com</button>
+            <button type="button" class="preset-chip" data-target="diagUrl" data-url="https://en.wikipedia.org">Wikipedia</button>
+            <button type="button" class="preset-chip" data-target="diagUrl" data-url="https://httpbin.org/get">httpbin</button>
+            <button type="button" class="preset-chip" data-target="diagUrl" data-url="https://cloudflare.com">cloudflare.com</button>
           </div>
           <div id="diagError" class="alert-box error" role="alert" hidden></div>
         </form>
@@ -199,6 +227,8 @@
             <div class="form-field">
               <label for="inspectorToolSelect" class="field-label">Inspector Tool</label>
               <select id="inspectorToolSelect">
+                <option value="dns">DNS Records Lookup (DoH 1.1.1.1)</option>
+                <option value="tls">SSL/TLS Security Audit</option>
                 <option value="security-headers">Security Headers Checker</option>
                 <option value="headers">HTTP Response Headers</option>
                 <option value="redirects">Redirect Chain Tracer</option>
@@ -212,6 +242,13 @@
             <div class="form-field form-btn-align">
               <button type="submit" id="inspectorSubmitBtn" class="btn-primary">Inspect</button>
             </div>
+          </div>
+          <div class="preset-chips-row">
+            <span class="chips-label">Demo:</span>
+            <button type="button" class="preset-chip" data-target="inspectorUrl" data-url="https://cloudflare.com">cloudflare.com</button>
+            <button type="button" class="preset-chip" data-target="inspectorUrl" data-url="https://github.com">github.com</button>
+            <button type="button" class="preset-chip" data-target="inspectorUrl" data-url="https://httpbin.org/json">httpbin JSON</button>
+            <button type="button" class="preset-chip" data-target="inspectorUrl" data-url="https://example.com">example.com</button>
           </div>
           <div id="inspectorError" class="alert-box error" role="alert" hidden></div>
         </form>
