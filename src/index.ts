@@ -33,6 +33,29 @@ import { verifyTurnstileToken } from "./turnstile.ts";
 import type { Env } from "./types.ts";
 
 /**
+ * Ensures an HTTP status code is valid for standard Response construction (200-599).
+ * Non-standard status codes returned by upstream servers (e.g. LinkedIn 999 Request Denied,
+ * Cloudflare 520-526 edge codes, or legacy custom codes) are mapped safely to 502 Bad Gateway
+ * so the Worker never crashes with a RangeError.
+ */
+export function sanitizeHttpStatus(status: number): number {
+  if (Number.isInteger(status) && status >= 200 && status <= 599) {
+    return status;
+  }
+  return 502;
+}
+
+/**
+ * Sanitizes statusText to conform to HTTP Reason-Phrase production.
+ * Prevents TypeError if upstream returns non-standard or control characters.
+ */
+export function sanitizeStatusText(statusText: string | null | undefined): string | undefined {
+  if (!statusText) return undefined;
+  const cleaned = statusText.replace(/[\r\n\x00-\x1F\x7F-\xFF]/g, "").trim();
+  return cleaned.length > 0 && cleaned !== "<none>" ? cleaned : undefined;
+}
+
+/**
  * Handles incoming web proxy requests.
  */
 async function proxy(request: Request, _env: Env): Promise<Response> {
@@ -127,6 +150,9 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     });
   }
 
+  const safeStatus = sanitizeHttpStatus(upstream.status);
+  const safeStatusText = sanitizeStatusText(upstream.statusText);
+
   // 6. Upstream redirect handling (301, 302, 303, 307, 308)
   if ([301, 302, 303, 307, 308].includes(upstream.status)) {
     const location = upstream.headers.get("Location");
@@ -136,8 +162,8 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
         const redirectHeaders = buildResponseHeaders(upstream, false);
         redirectHeaders.set("Location", gatewayUrl(resolvedLocation));
         return new Response(null, {
-          status: upstream.status,
-          statusText: upstream.statusText,
+          status: safeStatus,
+          statusText: safeStatusText,
           headers: redirectHeaders,
         });
       } catch {
@@ -158,9 +184,12 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     // If document exceeds max processing size, stream directly to prevent worker memory exhaustion
     if (contentLength > MAX_HTML_SIZE_BYTES) {
       const outHeaders = buildResponseHeaders(upstream, false);
+      if (safeStatus !== upstream.status) {
+        outHeaders.set("X-Upstream-Status", String(upstream.status));
+      }
       return new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
+        status: safeStatus,
+        statusText: safeStatusText,
         headers: outHeaders,
       });
     }
@@ -169,10 +198,13 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     const rewrittenHtml = rewriteHtml(htmlText, target);
     const outHeaders = buildResponseHeaders(upstream, true);
     outHeaders.set("Content-Type", "text/html; charset=utf-8");
+    if (safeStatus !== upstream.status) {
+      outHeaders.set("X-Upstream-Status", String(upstream.status));
+    }
 
     return new Response(rewrittenHtml, {
-      status: upstream.status,
-      statusText: upstream.statusText,
+      status: safeStatus,
+      statusText: safeStatusText,
       headers: outHeaders,
     });
   }
@@ -183,9 +215,12 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
 
     if (contentLength > MAX_HTML_SIZE_BYTES) {
       const outHeaders = buildResponseHeaders(upstream, false);
+      if (safeStatus !== upstream.status) {
+        outHeaders.set("X-Upstream-Status", String(upstream.status));
+      }
       return new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
+        status: safeStatus,
+        statusText: safeStatusText,
         headers: outHeaders,
       });
     }
@@ -194,27 +229,34 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     const rewrittenCss = rewriteCss(cssText, target);
     const outHeaders = buildResponseHeaders(upstream, true);
     outHeaders.set("Content-Type", "text/css; charset=utf-8");
+    if (safeStatus !== upstream.status) {
+      outHeaders.set("X-Upstream-Status", String(upstream.status));
+    }
 
     return new Response(rewrittenCss, {
-      status: upstream.status,
-      statusText: upstream.statusText,
+      status: safeStatus,
+      statusText: safeStatusText,
       headers: outHeaders,
     });
   }
 
   // 9. Binary, JavaScript, fonts, media, PDF, and JSON: direct passthrough stream
   const outHeaders = buildResponseHeaders(upstream, false);
+  if (safeStatus !== upstream.status) {
+    outHeaders.set("X-Upstream-Status", String(upstream.status));
+  }
   return new Response(request.method === "HEAD" ? null : upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
+    status: safeStatus,
+    statusText: safeStatusText,
     headers: outHeaders,
   });
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const pathname = url.pathname;
+    try {
+      const url = new URL(request.url);
+      const pathname = url.pathname;
 
     // --- Core Endpoints ---
     if (pathname === "/health") {
@@ -396,5 +438,22 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+    } catch (fatalError) {
+      console.error("RouteX Uncaught Gateway Exception:", fatalError);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Internal Gateway Error",
+          message: fatalError instanceof Error ? fatalError.message : "An unexpected error occurred in RouteX gateway.",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-RouteX-Gateway": "1",
+          },
+        }
+      );
+    }
   },
 };

@@ -13,10 +13,12 @@ import {
   isDaytonaConfigured,
   handleDaytonaTool,
   parseAndValidateTarget,
+  parseAndValidateRequest,
   MAX_DAYTONA_OUTPUT_BYTES,
   DEFAULT_DAYTONA_TIMEOUT_SECONDS,
 } from "../src/daytona.ts";
 import { verifyTurnstileToken } from "../src/turnstile.ts";
+import worker, { sanitizeHttpStatus, sanitizeStatusText } from "../src/index.ts";
 import type { Env } from "../src/types.ts";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -412,6 +414,74 @@ async function runAllTests() {
   // 4.7 Gateway independence: Normal RouteX proxy remains fully functional
   const proxyIndependenceCheck = resolveAndProxy("/test", new URL("https://example.com"));
   test("Gateway Independence: Normal RouteX proxy functions completely independently of Daytona", proxyIndependenceCheck.includes("/proxy?url=https%3A%2F%2Fexample.com%2Ftest"));
+
+  // 4.8 Viewport configuration testing (Desktop vs Mobile)
+  const mobileViewportReq = new Request("https://gateway/api/tools/screenshot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com", viewport: "mobile" }),
+  });
+  const parsedMobile = await parseAndValidateRequest(mobileViewportReq);
+  test("Daytona Viewport: Mobile mode parsed correctly", parsedMobile.viewport === "mobile" && parsedMobile.target.hostname === "example.com");
+
+  const desktopDefaultReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com" }),
+  });
+  const parsedDefault = await parseAndValidateRequest(desktopDefaultReq);
+  test("Daytona Viewport: Desktop mode defaulted when omitted", parsedDefault.viewport === "desktop");
+
+  const queryViewportReq = new Request("https://gateway/api/tools/pdf?url=https%3A%2F%2Fexample.com&viewport=mobile", {
+    method: "GET",
+  });
+  const parsedQueryViewport = await parseAndValidateRequest(queryViewportReq);
+  test("Daytona Viewport: Query string viewport parameter parsed correctly", parsedQueryViewport.viewport === "mobile");
+
+  // 4.9 Prepared Snapshot configuration testing (Phase 3)
+  const snapshotEnv: Env = { ASSETS: {} as any, DAYTONA_API_KEY: "dtn_key", DAYTONA_SNAPSHOT: "routex-playwright-snapshot" };
+  const snapshotStatus = getDaytonaStatus(snapshotEnv);
+  test("Daytona Snapshot: Snapshot configured flag set when DAYTONA_SNAPSHOT present", snapshotStatus.snapshotConfigured === true);
+
+  const noSnapshotStatus = getDaytonaStatus(mockDaytonaEnv);
+  test("Daytona Snapshot: Snapshot configured flag false when DAYTONA_SNAPSHOT absent", noSnapshotStatus.snapshotConfigured === false);
+
+  // 4.10 Daytona error handling (Unavailable / invalid target network)
+  const unavailableReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://nonexistent-domain-for-unit-test-12345.com" }),
+  });
+  const resUnavailable = await handleDaytonaTool(unavailableReq, mockDaytonaEnv, "render");
+  test("Daytona Error Handling: Unreachable target or client failure returns 502 Bad Gateway without crashing", resUnavailable.status === 502);
+
+  // ----------------------------------------------------
+  // SECTION 5: HTTP STATUS SANITIZATION & REGRESSION TESTS
+  // ----------------------------------------------------
+  console.log("\n--- Section 5: HTTP Status Sanitization & Gateway Resilience ---");
+  test("Status Sanitization: Standard 200 OK preserved", sanitizeHttpStatus(200) === 200);
+  test("Status Sanitization: Standard 301 Redirect preserved", sanitizeHttpStatus(301) === 301);
+  test("Status Sanitization: Standard 404 Not Found preserved", sanitizeHttpStatus(404) === 404);
+  test("Status Sanitization: Standard 500 Server Error preserved", sanitizeHttpStatus(500) === 500);
+  test("Status Sanitization: Non-standard status 999 (LinkedIn Request Denied) safely mapped to 502", sanitizeHttpStatus(999) === 502);
+  test("Status Sanitization: Non-standard status < 200 mapped to 502", sanitizeHttpStatus(100) === 502);
+  test("Status Sanitization: Non-standard status > 599 mapped to 502", sanitizeHttpStatus(600) === 502);
+  test("StatusText Sanitization: Normal ASCII reason phrase preserved", sanitizeStatusText("OK") === "OK");
+  test("StatusText Sanitization: Empty or <none> string returns undefined", sanitizeStatusText("<none>") === undefined);
+  test("StatusText Sanitization: Control characters and newlines stripped", sanitizeStatusText("OK\r\nInjected: Header") === "OKInjected: Header");
+
+  // Regression test: LinkedIn returns HTTP 999 which previously caused RangeError (Cloudflare Error 1101)
+  const linkedInReq = new Request("https://gateway/proxy?url=https%3A%2F%2Fwww.linkedin.com%2Fin%2Fjojin-john-74386b34a%2F", {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    }
+  });
+  const regressionEnv: Env = { ASSETS: {} as any };
+  const linkedInRes = await worker.fetch(linkedInReq, regressionEnv);
+  test("Regression Test: Worker /proxy handles non-standard upstream status 999 without throwing RangeError (Error 1101)", linkedInRes.status === 502);
+  test("Regression Test: Worker preserves original non-standard upstream code in X-Upstream-Status", linkedInRes.headers.get("X-Upstream-Status") === "999");
+  test("Regression Test: Gateway identifier X-RouteX-Gateway present on sanitized error response", linkedInRes.headers.get("X-RouteX-Gateway") === "1");
 
   // ----------------------------------------------------
   // TEST SUMMARY

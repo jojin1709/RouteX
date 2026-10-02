@@ -192,6 +192,11 @@ export function buildResponseHeaders(source: Response, isRewrittenText: boolean)
     if (ce) h.set("content-encoding", ce);
   }
 
+  // Preserve non-standard upstream HTTP status code (e.g. LinkedIn 999)
+  if (source.status < 200 || source.status > 599) {
+    h.set("X-Upstream-Status", String(source.status));
+  }
+
   h.set("X-RouteX-Gateway", "1");
   h.set("X-Content-Type-Options", "nosniff");
   h.set("Referrer-Policy", "no-referrer");

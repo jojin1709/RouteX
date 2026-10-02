@@ -6,6 +6,7 @@ export interface Env {
   DAYTONA_API_KEY?: string; // Optional Daytona API key secret
   DAYTONA_SERVER_URL?: string; // Optional Daytona Server URL
   DAYTONA_TARGET?: string; // Optional Daytona target identifier
+  DAYTONA_SNAPSHOT?: string; // Optional prepared Daytona snapshot name (with Node, Chromium, Playwright)
 }
 
 export type CompatibilityRating = "Full" | "Partial" | "Limited";

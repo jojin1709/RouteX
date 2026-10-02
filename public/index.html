@@ -2,55 +2,248 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="RouteX — a stateless Cloudflare-powered web gateway.">
-  <title>RouteX — Private Web Gateway</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RouteX — Professional Stateless HTTP/HTTPS Web Gateway & Security Diagnostics Dashboard.">
+  <title>RouteX Dashboard — Gateway, Diagnostics & Inspector</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <div class="shell">
-    <header class="nav">
-      <a class="brand" href="/" aria-label="RouteX home"><span class="mark">R</span><span>RouteX</span></a>
-      <div class="nav-status"><span class="dot"></span> Stateless gateway</div>
+    <header class="header">
+      <div class="header-left">
+        <a class="brand" href="/" aria-label="RouteX home">
+          <span class="brand-mark">RX</span>
+          <span class="brand-name">RouteX</span>
+        </a>
+        <span class="badge-tag">v2.0 Stateless</span>
+      </div>
+
+      <nav class="nav-tabs" role="tablist" aria-label="RouteX Tools">
+        <button id="tab-btn-proxy" class="nav-tab active" role="tab" aria-selected="true" aria-controls="panel-proxy" data-tab="proxy">Proxy</button>
+        <button id="tab-btn-diagnostics" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-diagnostics" data-tab="diagnostics">Diagnostics</button>
+        <button id="tab-btn-browser" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-browser" data-tab="browser">Browser Lab</button>
+        <button id="tab-btn-inspector" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-inspector" data-tab="inspector">Inspector</button>
+      </nav>
+
+      <div class="header-right">
+        <a href="/health" class="health-pill" target="_blank" rel="noopener"><span class="dot live"></span> Edge Live</a>
+      </div>
     </header>
 
-    <main>
-      <section class="hero">
-        <div class="eyebrow">CLOUDFLARE POWERED · NO ACCOUNT</div>
-        <h1>Browse through<br><span>RouteX.</span></h1>
-        <p class="lead">A lightweight web gateway designed to process requests without creating a browsing-history database.</p>
+    <main class="main-content">
+      <!-- ================= TAB 1: PROXY ================= -->
+      <section id="panel-proxy" class="tab-panel active" role="tabpanel" aria-labelledby="tab-btn-proxy">
+        <div class="panel-header">
+          <h2>Web Gateway</h2>
+          <p class="subtitle">Stream publicly available web resources through the stateless Cloudflare edge proxy with automated link and asset rewriting.</p>
+        </div>
 
-        <form id="proxyForm" class="proxy-card">
-          <label for="url">Website URL</label>
-          <div class="input-row">
-            <span class="lock">↗</span>
-            <input id="url" name="url" type="text" inputmode="url" autocomplete="off" placeholder="https://example.com" required>
-            <button type="submit">Open <span>→</span></button>
+        <form id="proxyForm" class="control-box">
+          <label for="proxyUrl" class="field-label">Target URL</label>
+          <div class="input-group">
+            <span class="input-prefix">GET</span>
+            <input id="proxyUrl" name="url" type="text" inputmode="url" autocomplete="off" placeholder="https://example.com" spellcheck="false" required>
+            <button type="submit" id="proxySubmitBtn" class="btn-primary">Open Gateway &rarr;</button>
           </div>
-          <div id="error" class="error" role="alert" hidden></div>
+          <div id="proxyError" class="alert-box error" role="alert" hidden></div>
         </form>
 
-        <div class="trust-row">
-          <span>✓ No accounts required</span>
-          <span>✓ No browsing history stored by RouteX</span>
-          <span>✓ HTTPS supported</span>
+        <div class="meta-grid">
+          <div class="meta-card">
+            <div class="meta-title">SSRF Protection</div>
+            <div class="meta-desc">Rejects loopback (127.0.0.1), RFC1918 private ranges, cloud metadata (169.254.169.254), IPv6 ULA, and internal hostnames.</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-title">Asset Rewriting</div>
+            <div class="meta-desc">Rewrites HTML anchors, images, scripts, stylesheets, media sources, and CSS relative url() references.</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-title">Zero Application Storage</div>
+            <div class="meta-desc">No database, no KV, no cookies retained, and zero browsing history logs persisted. Pure streaming proxy.</div>
+          </div>
         </div>
       </section>
 
-      <section class="features">
-        <article><div class="icon">↗</div><h2>Simple</h2><p>Enter a URL and RouteX forwards a compatible web request through the Cloudflare Worker.</p></article>
-        <article><div class="icon">◌</div><h2>Stateless</h2><p>No D1, KV, R2, accounts, or application database are required for the core gateway.</p></article>
-        <article><div class="icon">◇</div><h2>Protected</h2><p>Destination validation rejects local and private IPv4 targets to reduce server-side request abuse.</p></article>
+      <!-- ================= TAB 2: DIAGNOSTICS ================= -->
+      <section id="panel-diagnostics" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-diagnostics" hidden>
+        <div class="panel-header">
+          <h2>Compatibility Diagnostics</h2>
+          <p class="subtitle">Execute 9 technical probes to factually verify DNS, HTTPS, stylesheets, images, fonts, redirect chains, and SPA client-side routing signals.</p>
+        </div>
+
+        <form id="diagForm" class="control-box">
+          <label for="diagUrl" class="field-label">Audit Target</label>
+          <div class="input-group">
+            <span class="input-prefix">AUDIT</span>
+            <input id="diagUrl" type="text" inputmode="url" autocomplete="off" placeholder="https://example.com" spellcheck="false" required>
+            <button type="submit" id="diagSubmitBtn" class="btn-primary">Run Diagnostics</button>
+          </div>
+          <div id="diagError" class="alert-box error" role="alert" hidden></div>
+        </form>
+
+        <div id="diagLoading" class="loading-state" hidden>
+          <div class="spinner"></div>
+          <span>Probing target network, headers, assets, and routing characteristics...</span>
+        </div>
+
+        <div id="diagResults" class="results-box" hidden>
+          <div class="results-summary-row">
+            <div>
+              <span class="summary-label">Target:</span>
+              <span id="diagTargetText" class="summary-value mono"></span>
+            </div>
+            <div>
+              <span class="summary-label">Compatibility:</span>
+              <span id="diagRatingBadge" class="rating-badge"></span>
+            </div>
+          </div>
+          <p id="diagSummaryText" class="summary-explanation"></p>
+
+          <table class="probe-table">
+            <thead>
+              <tr>
+                <th style="width: 140px;">Probe Category</th>
+                <th style="width: 80px;">Status</th>
+                <th>Observation</th>
+              </tr>
+            </thead>
+            <tbody id="diagProbeRows"></tbody>
+          </table>
+
+          <div id="diagRecsSection" class="recs-box" hidden>
+            <div class="recs-title">Technical Recommendations</div>
+            <ul id="diagRecsList"></ul>
+          </div>
+        </div>
       </section>
 
-      <section class="notice">
-        <div><strong>What RouteX is</strong><p>A web gateway for HTTP/HTTPS requests. It is not a device-level VPN and does not tunnel arbitrary mobile-app traffic.</p></div>
-        <div><strong>Privacy note</strong><p>RouteX does not intentionally persist URLs, page content, cookies, or browsing history. Cloudflare may still process operational/security data under its own policies.</p></div>
+      <!-- ================= TAB 3: BROWSER LAB ================= -->
+      <section id="panel-browser" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-browser" hidden>
+        <div class="panel-header">
+          <h2>Browser Lab (Daytona Sandbox)</h2>
+          <p class="subtitle">Run headless Chromium & Playwright in an ephemeral, isolated Daytona compute container for screenshots, PDFs, and rendered DOM output.</p>
+        </div>
+
+        <form id="browserForm" class="control-box">
+          <div class="form-row">
+            <div class="form-field flex-grow">
+              <label for="browserUrl" class="field-label">Target URL</label>
+              <input id="browserUrl" type="text" inputmode="url" placeholder="https://example.com" spellcheck="false" required>
+            </div>
+            <div class="form-field">
+              <label for="browserToolSelect" class="field-label">Tool Action</label>
+              <select id="browserToolSelect">
+                <option value="screenshot">Screenshot (PNG)</option>
+                <option value="render">Rendered DOM (HTML)</option>
+                <option value="pdf">Vector PDF</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="browserViewportSelect" class="field-label">Viewport</label>
+              <select id="browserViewportSelect">
+                <option value="desktop">Desktop (1280x720)</option>
+                <option value="mobile">Mobile (375x667)</option>
+              </select>
+            </div>
+            <div class="form-field form-btn-align">
+              <button type="submit" id="browserSubmitBtn" class="btn-primary">Execute In Sandbox</button>
+            </div>
+          </div>
+          <div id="browserError" class="alert-box error" role="alert" hidden></div>
+        </form>
+
+        <div id="browserLoading" class="loading-state" hidden>
+          <div class="spinner"></div>
+          <span>Provisioning ephemeral Daytona sandbox, launching Playwright, and collecting output...</span>
+        </div>
+
+        <div id="browserResults" class="results-box" hidden>
+          <div class="results-summary-row">
+            <div>
+              <span class="summary-label">Execution Time:</span>
+              <span id="browserDuration" class="summary-value mono"></span>
+            </div>
+            <div>
+              <span class="summary-label">Network Requests:</span>
+              <span id="browserReqCount" class="summary-value mono"></span>
+            </div>
+            <div>
+              <span class="summary-label">Viewport:</span>
+              <span id="browserViewportActive" class="summary-value mono"></span>
+            </div>
+          </div>
+
+          <div id="browserOutputArea" class="browser-output-display"></div>
+
+          <div id="browserConsoleSection" class="console-box" hidden>
+            <div class="console-title">Browser Console Messages</div>
+            <div id="browserConsoleLogs" class="console-log-stream"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TAB 4: INSPECTOR ================= -->
+      <section id="panel-inspector" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-inspector" hidden>
+        <div class="panel-header">
+          <h2>Stateless Inspector Tools</h2>
+          <p class="subtitle">Direct inspection of HTTP headers, security policies (HSTS, CSP, XFO), redirect hops, robots.txt, and sitemaps.</p>
+        </div>
+
+        <form id="inspectorForm" class="control-box">
+          <div class="form-row">
+            <div class="form-field flex-grow">
+              <label for="inspectorUrl" class="field-label">Inspect URL</label>
+              <input id="inspectorUrl" type="text" inputmode="url" placeholder="https://example.com" spellcheck="false" required>
+            </div>
+            <div class="form-field">
+              <label for="inspectorToolSelect" class="field-label">Inspector Tool</label>
+              <select id="inspectorToolSelect">
+                <option value="security-headers">Security Headers Checker</option>
+                <option value="headers">HTTP Response Headers</option>
+                <option value="redirects">Redirect Chain Tracer</option>
+                <option value="robots">robots.txt Directives</option>
+                <option value="sitemap">sitemap.xml Parser</option>
+                <option value="links">HTML Link Extractor</option>
+                <option value="json">JSON Validator</option>
+                <option value="response-info">Response Information</option>
+              </select>
+            </div>
+            <div class="form-field form-btn-align">
+              <button type="submit" id="inspectorSubmitBtn" class="btn-primary">Inspect</button>
+            </div>
+          </div>
+          <div id="inspectorError" class="alert-box error" role="alert" hidden></div>
+        </form>
+
+        <div id="inspectorLoading" class="loading-state" hidden>
+          <div class="spinner"></div>
+          <span>Querying upstream server and parsing response metadata...</span>
+        </div>
+
+        <div id="inspectorResults" class="results-box" hidden>
+          <div class="inspector-meta-bar">
+            <span id="inspectorMetaEndpoint" class="mono text-muted"></span>
+            <button id="inspectorCopyBtn" type="button" class="btn-secondary btn-sm">Copy Output</button>
+          </div>
+          <pre id="inspectorCodeOutput" class="code-view"></pre>
+        </div>
       </section>
     </main>
 
-    <footer><span>RouteX</span><span>Built for Cloudflare Workers</span><a href="/health">Health</a></footer>
+    <footer class="footer">
+      <div class="footer-left">
+        <strong>RouteX</strong> — Stateless Web Gateway & Security Diagnostics
+      </div>
+      <div class="footer-center">
+        Developer: <a href="https://github.com/jojin1709" target="_blank" rel="noopener"><strong>JOJIN JOHN</strong></a>
+      </div>
+      <div class="footer-right">
+        <a href="/api" target="_blank" rel="noopener">API Catalog</a>
+        <a href="https://github.com/jojin1709/RouteX" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </footer>
   </div>
+
   <script src="/app.js" defer></script>
 </body>
 </html>
