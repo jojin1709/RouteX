@@ -495,6 +495,37 @@ async function runAllTests() {
   const spaCatRes = await worker.fetch(spaCatReq, regressionEnv);
   test("SPA Navigation: Direct unproxied route redirected to /proxy?url=... via cookie", spaCatRes.status === 302 && Boolean(spaCatRes.headers.get("Location")?.includes("/proxy?url=")));
 
+  // --- Section 6: API Catalog & Documentation ---
+  const apiJsonReq = new Request("https://gateway/api", {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  const apiJsonRes = await worker.fetch(apiJsonReq, regressionEnv);
+  const apiJsonData = await apiJsonRes.json() as any;
+  test("API Catalog: Returns JSON when requested via Accept: application/json", apiJsonRes.status === 200 && apiJsonData.service === "RouteX Web Gateway");
+  test("API Catalog: Includes core, diagnostics and inspector endpoint groups", Boolean(apiJsonData.endpoints?.core && apiJsonData.endpoints?.inspectorTools));
+
+  const apiHtmlEnv: Env = {
+    ASSETS: {
+      fetch: async (req: Request) => {
+        const u = new URL(req.url);
+        return new Response(`<html>${u.pathname}</html>`, { status: 200, headers: { "Content-Type": "text/html" } });
+      }
+    } as any
+  };
+  const apiHtmlReq = new Request("https://gateway/api", {
+    method: "GET",
+    headers: { "Accept": "text/html,application/xhtml+xml" }
+  });
+  const apiHtmlRes = await worker.fetch(apiHtmlReq, apiHtmlEnv);
+  const apiHtmlText = await apiHtmlRes.text();
+  test("API Catalog: Serves api.html when requested from a browser with Accept: text/html", apiHtmlRes.status === 200 && apiHtmlText.includes("/api.html"));
+
+  const apiDotJsonReq = new Request("https://gateway/api.json", { method: "GET" });
+  const apiDotJsonRes = await worker.fetch(apiDotJsonReq, regressionEnv);
+  const apiDotJsonData = await apiDotJsonRes.json() as any;
+  test("API Catalog: Returns JSON directly via /api.json", apiDotJsonRes.status === 200 && apiDotJsonData.service === "RouteX Web Gateway");
+
   // ----------------------------------------------------
   // TEST SUMMARY
   // ----------------------------------------------------

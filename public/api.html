@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RouteX Web Gateway — Interactive REST API Catalog, Endpoint Documentation & Edge Playground.">
+  <title>RouteX API Catalog & Interactive Documentation</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <div class="header-left">
+        <a class="brand" href="/" aria-label="RouteX home">
+          <span class="brand-mark">RX</span>
+          <span class="brand-name">RouteX</span>
+        </a>
+        <span class="badge-tag">API Reference</span>
+      </div>
+
+      <nav class="nav-tabs" role="tablist" aria-label="RouteX Navigation">
+        <a href="/" class="nav-tab">Proxy Dashboard</a>
+        <a href="/?tab=diagnostics" class="nav-tab">Diagnostics</a>
+        <a href="/?tab=browser" class="nav-tab">Browser Lab</a>
+        <a href="/?tab=inspector" class="nav-tab">Inspector</a>
+        <a href="/api" class="nav-tab active">API Docs</a>
+      </nav>
+
+      <div class="header-right">
+        <a href="/health" class="health-pill" target="_blank" rel="noopener"><span class="dot live"></span> Edge Live</a>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- HERO -->
+      <section class="api-hero">
+        <div class="api-hero-header">
+          <div>
+            <h1 class="api-hero-title">RouteX Gateway API Catalog</h1>
+            <p class="subtitle">High-performance, stateless web gateway endpoints running on Cloudflare Workers edge. Complete with SSRF filtering, asset rewriting, and security diagnostics.</p>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <a href="/api.json" class="btn-ghost mono" target="_blank">View Raw JSON &rarr;</a>
+          </div>
+        </div>
+
+        <div class="api-badge-row">
+          <span class="pill-badge active">&bull; 100% Stateless (Zero DB / KV)</span>
+          <span class="pill-badge">&bull; SSRF-Protected</span>
+          <span class="pill-badge">&bull; Edge Latency &lt; 20ms</span>
+          <span class="pill-badge">&bull; CORS Enabled</span>
+        </div>
+
+        <div class="api-base-bar">
+          <div>
+            <span class="api-base-label">Gateway Base URL:</span>
+            <span id="baseUrlDisplay" class="api-base-url mono"></span>
+          </div>
+          <button id="copyBaseUrlBtn" type="button" class="btn-secondary btn-sm">Copy Base URL</button>
+        </div>
+      </section>
+
+      <!-- INTERACTIVE TEST CONSOLE -->
+      <section class="api-console-box" id="playground">
+        <div class="api-console-title">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-blue);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Interactive Edge API Console
+          </h3>
+          <span class="badge-tag">Live Sandbox</span>
+        </div>
+
+        <form id="runnerForm">
+          <div class="form-row">
+            <div class="form-field flex-grow">
+              <label for="runnerEndpointSelect" class="field-label">Target Endpoint</label>
+              <select id="runnerEndpointSelect">
+                <optgroup label="Core Gateway">
+                  <option value="/health" data-method="GET">GET /health</option>
+                  <option value="/proxy" data-method="GET" data-param="url">GET /proxy?url={url}</option>
+                </optgroup>
+                <optgroup label="Diagnostics Probes">
+                  <option value="/diagnostics" data-method="GET" data-param="url">GET /diagnostics?url={url}</option>
+                </optgroup>
+                <optgroup label="Stateless Inspector Tools">
+                  <option value="/api/tools/security-headers" data-method="GET" data-param="url" selected>GET /api/tools/security-headers?url={url}</option>
+                  <option value="/api/tools/headers" data-method="GET" data-param="url">GET /api/tools/headers?url={url}</option>
+                  <option value="/api/tools/redirects" data-method="GET" data-param="url">GET /api/tools/redirects?url={url}</option>
+                  <option value="/api/tools/links" data-method="GET" data-param="url">GET /api/tools/links?url={url}</option>
+                  <option value="/api/tools/robots" data-method="GET" data-param="url">GET /api/tools/robots?url={url}</option>
+                  <option value="/api/tools/sitemap" data-method="GET" data-param="url">GET /api/tools/sitemap?url={url}</option>
+                  <option value="/api/tools/json" data-method="GET" data-param="url">GET /api/tools/json?url={url}</option>
+                  <option value="/api/tools/xml" data-method="GET" data-param="url">GET /api/tools/xml?url={url}</option>
+                  <option value="/api/tools/response-info" data-method="GET" data-param="url">GET /api/tools/response-info?url={url}</option>
+                </optgroup>
+                <optgroup label="Browser & Daytona Tools">
+                  <option value="/api/daytona/status" data-method="GET">GET /api/daytona/status</option>
+                  <option value="/api/browser/info" data-method="GET">GET /api/browser/info</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="form-field flex-grow" id="runnerUrlGroup">
+              <label for="runnerTargetUrl" class="field-label">Target URL Parameter (?url=...)</label>
+              <input type="text" id="runnerTargetUrl" value="https://example.com" placeholder="https://example.com">
+            </div>
+
+            <div class="form-field form-btn-align">
+              <button type="submit" id="runnerSubmitBtn" class="btn-primary">Execute Request &rarr;</button>
+            </div>
+          </div>
+        </form>
+
+        <div id="runnerLoading" class="loading-state" hidden>
+          <div class="spinner"></div>
+          <span>Streaming live request via Cloudflare Workers edge...</span>
+        </div>
+
+        <div id="runnerResults" class="results-box" style="margin-top:16px;" hidden>
+          <div class="results-summary-row">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span id="runnerStatusBadge" class="response-status-badge response-status-2xx">200 OK</span>
+              <span id="runnerLatencyText" class="mono text-muted" style="font-size:12px;">-- ms</span>
+              <span id="runnerEndpointText" class="mono text-muted" style="font-size:12px;"></span>
+            </div>
+            <div>
+              <button id="runnerCopyJsonBtn" type="button" class="btn-secondary btn-sm">Copy Output</button>
+            </div>
+          </div>
+          <pre id="runnerOutputPre" class="code-view" style="max-height:360px;"></pre>
+        </div>
+      </section>
+
+      <!-- ENDPOINT DIRECTORY SECTIONS -->
+
+      <!-- CATEGORY 1: CORE GATEWAY -->
+      <section class="api-category">
+        <div class="api-category-head">
+          <span class="badge-tag">Section 1</span>
+          <h3>Core Gateway Endpoints</h3>
+        </div>
+        <div class="api-card-grid">
+          
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/health</span>
+              </div>
+              <span class="badge-tag">Stateless</span>
+            </div>
+            <div class="api-card-desc">Returns gateway operational status, stateless architecture confirmation, and local edge browser rendering availability.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/health" data-method="GET">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/health" data-method="GET">Copy cURL</button>
+              <a href="/health" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/proxy?url={targetUrl}</span>
+              </div>
+              <span class="badge-tag">Streaming</span>
+            </div>
+            <div class="api-card-desc">Streams the upstream web page or resource. Automatically performs deep HTML/CSS relative URL rewriting, SPA navigation interception, and robust SSRF validation against private/loopback IP ranges.</div>
+            <div class="api-card-params">
+              <span class="param-label">PARAM:</span>
+              <span class="param-name">url</span>
+              <span class="param-type">(string, required)</span>
+              <span class="param-desc">Fully-qualified HTTP or HTTPS target URL (e.g. <code>https://example.com</code>)</span>
+            </div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/proxy" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/proxy?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/proxy?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- CATEGORY 2: DIAGNOSTICS -->
+      <section class="api-category">
+        <div class="api-category-head">
+          <span class="badge-tag">Section 2</span>
+          <h3>Technical Compatibility Diagnostics</h3>
+        </div>
+        <div class="api-card-grid">
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/diagnostics?url={targetUrl}</span>
+              </div>
+              <span class="badge-tag">9 Probes</span>
+            </div>
+            <div class="api-card-desc">Executes comprehensive automated technical probes against the upstream host. Evaluates DNS resolution, TLS certificates, CSP, subresource stylesheets/images/fonts, redirect chains, bot-blocking signals, and client-side SPA routing characteristics.</div>
+            <div class="api-card-params">
+              <span class="param-label">PARAM:</span>
+              <span class="param-name">url</span>
+              <span class="param-type">(string, required)</span>
+              <span class="param-desc">Audit target URL (e.g. <code>https://example.com</code>)</span>
+            </div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/diagnostics" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/diagnostics?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/diagnostics?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- CATEGORY 3: STATELESS INSPECTOR TOOLS -->
+      <section class="api-category">
+        <div class="api-category-head">
+          <span class="badge-tag">Section 3</span>
+          <h3>Stateless Security & Web Inspector APIs</h3>
+        </div>
+        <div class="api-card-grid">
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/security-headers?url={url}</span>
+              </div>
+              <span class="badge-tag">Security</span>
+            </div>
+            <div class="api-card-desc">Audits HTTP security response headers: Strict-Transport-Security (HSTS), Content-Security-Policy (CSP), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/security-headers" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/security-headers?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/security-headers?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/headers?url={url}</span>
+              </div>
+              <span class="badge-tag">HTTP</span>
+            </div>
+            <div class="api-card-desc">Extracts raw HTTP response headers returned by the upstream server along with protocol version and status code.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/headers" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/headers?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/headers?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/redirects?url={url}</span>
+              </div>
+              <span class="badge-tag">Tracing</span>
+            </div>
+            <div class="api-card-desc">Traces full HTTP 301, 302, 307, and 308 redirect hops step-by-step from initial target to terminal landing URL.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/redirects" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/redirects?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/redirects?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/links?url={url}</span>
+              </div>
+              <span class="badge-tag">Crawler</span>
+            </div>
+            <div class="api-card-desc">Parses target HTML markup and extracts all hyperlink anchors (href), distinguishing internal domain vs external links.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/links" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/links?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/links?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/robots?url={url}</span>
+              </div>
+              <span class="badge-tag">SEO</span>
+            </div>
+            <div class="api-card-desc">Retrieves upstream host <code>robots.txt</code> and parses Disallow, Allow, Crawl-delay, and Sitemap directives per User-agent.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/robots" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/robots?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/robots?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/sitemap?url={url}</span>
+              </div>
+              <span class="badge-tag">XML</span>
+            </div>
+            <div class="api-card-desc">Parses <code>sitemap.xml</code> XML documents and indexes indexed URLs, last modified dates, and change frequencies.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/sitemap" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/sitemap?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/sitemap?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/json?url={url}</span>
+              </div>
+              <span class="badge-tag">Parser</span>
+            </div>
+            <div class="api-card-desc">Fetches, validates, and pretty-prints JSON payloads from any public API endpoint.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/json" data-method="GET" data-url="https://httpbin.org/json">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/json?url=https://httpbin.org/json" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/json?url=https://httpbin.org/json" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/response-info?url={url}</span>
+              </div>
+              <span class="badge-tag">Metadata</span>
+            </div>
+            <div class="api-card-desc">Returns essential HTTP connection metadata: Content-Type, Content-Length, Charset, Server header, and round-trip time.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/response-info" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/response-info?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/response-info?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- CATEGORY 4: DAYTONA & BROWSER SANDBOXES -->
+      <section class="api-category">
+        <div class="api-category-head">
+          <span class="badge-tag">Section 4</span>
+          <h3>Headless Browser & Daytona Sandboxes</h3>
+        </div>
+        <div class="api-card-grid">
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/daytona/status</span>
+              </div>
+              <span class="badge-tag">Compute Lab</span>
+            </div>
+            <div class="api-card-desc">Checks whether Daytona sandboxed compute credentials, API keys, and target snapshot images are configured.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/daytona/status" data-method="GET">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/daytona/status" data-method="GET">Copy cURL</button>
+              <a href="/api/daytona/status" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag post">POST</span>
+                <span class="endpoint-path">/api/tools/render</span>
+              </div>
+              <span class="badge-tag">Playwright</span>
+            </div>
+            <div class="api-card-desc">Renders modern client-side Single Page Applications (Next.js, React, Remix) in an isolated Daytona Chromium sandbox and returns final rendered DOM HTML.</div>
+            <div class="api-card-params">
+              <span class="param-label">BODY:</span>
+              <span class="param-name">JSON: { "url": "https://example.com", "viewport": "desktop" | "mobile" }</span>
+            </div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost copy-curl-btn" data-curl='curl -X POST "https://routex-web-gateway.apkscope.workers.dev/api/tools/render" -H "Content-Type: application/json" -d "{\"url\":\"https://example.com\"}"'>Copy cURL</button>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag post">POST</span>
+                <span class="endpoint-path">/api/tools/screenshot</span>
+              </div>
+              <span class="badge-tag">Playwright</span>
+            </div>
+            <div class="api-card-desc">Captures a pixel-perfect PNG screenshot of any public website inside an isolated sandbox.</div>
+            <div class="api-card-params">
+              <span class="param-label">BODY:</span>
+              <span class="param-name">JSON: { "url": "https://example.com", "viewport": "desktop" | "mobile" }</span>
+            </div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost copy-curl-btn" data-curl='curl -X POST "https://routex-web-gateway.apkscope.workers.dev/api/tools/screenshot" -H "Content-Type: application/json" -d "{\"url\":\"https://example.com\"}" --output screenshot.png'>Copy cURL</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- CATEGORY 5: ABUSE CONTROL -->
+      <section class="api-category">
+        <div class="api-category-head">
+          <span class="badge-tag">Section 5</span>
+          <h3>Abuse Control & Verification</h3>
+        </div>
+        <div class="api-card-grid">
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag post">POST</span>
+                <span class="endpoint-path">/api/turnstile/verify</span>
+              </div>
+              <span class="badge-tag">Turnstile</span>
+            </div>
+            <div class="api-card-desc">Validates client-side Cloudflare Turnstile CAPTCHA tokens statelessly against the Cloudflare siteverify endpoint.</div>
+            <div class="api-card-params">
+              <span class="param-label">BODY / PARAM:</span>
+              <span class="param-name">token</span>
+              <span class="param-type">(string, required)</span>
+              <span class="param-desc">Turnstile challenge token string</span>
+            </div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost copy-curl-btn" data-curl='curl -X POST "https://routex-web-gateway.apkscope.workers.dev/api/turnstile/verify?token=0.XXXXXX"'>Copy cURL</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-left">
+        <strong>RouteX</strong> — Stateless Web Gateway & Security Diagnostics
+      </div>
+      <div class="footer-center">
+        Developer: <a href="https://github.com/jojin1709" target="_blank" rel="noopener"><strong>JOJIN JOHN</strong></a>
+      </div>
+      <div class="footer-right">
+        <a href="/">Dashboard</a>
+        <a href="/api.json" target="_blank">Raw JSON</a>
+        <a href="https://github.com/jojin1709/RouteX" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    (function() {
+      const origin = window.location.origin;
+      const baseUrlDisplay = document.getElementById("baseUrlDisplay");
+      if (baseUrlDisplay) baseUrlDisplay.textContent = origin;
+
+      const copyBaseUrlBtn = document.getElementById("copyBaseUrlBtn");
+      if (copyBaseUrlBtn) {
+        copyBaseUrlBtn.addEventListener("click", () => {
+          navigator.clipboard.writeText(origin).then(() => {
+            copyBaseUrlBtn.textContent = "Copied!";
+            setTimeout(() => { copyBaseUrlBtn.textContent = "Copy Base URL"; }, 1500);
+          });
+        });
+      }
+
+      // Copy cURL buttons
+      document.querySelectorAll(".copy-curl-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const directCurl = btn.getAttribute("data-curl");
+          let curlCmd = "";
+          if (directCurl) {
+            curlCmd = directCurl;
+          } else {
+            const ep = btn.getAttribute("data-endpoint");
+            const method = btn.getAttribute("data-method") || "GET";
+            const fullUrl = origin + (ep.startsWith("/") ? ep : "/" + ep);
+            curlCmd = method === "GET"
+              ? `curl -s "${fullUrl}"`
+              : `curl -s -X ${method} "${fullUrl}"`;
+          }
+
+          navigator.clipboard.writeText(curlCmd).then(() => {
+            const oldText = btn.textContent;
+            btn.textContent = "Copied cURL!";
+            setTimeout(() => { btn.textContent = oldText; }, 1500);
+          });
+        });
+      });
+
+      // Try buttons (populate runner)
+      const runnerSelect = document.getElementById("runnerEndpointSelect");
+      const runnerUrlInput = document.getElementById("runnerTargetUrl");
+      const runnerUrlGroup = document.getElementById("runnerUrlGroup");
+      const runnerForm = document.getElementById("runnerForm");
+      const runnerLoading = document.getElementById("runnerLoading");
+      const runnerResults = document.getElementById("runnerResults");
+      const runnerStatusBadge = document.getElementById("runnerStatusBadge");
+      const runnerLatencyText = document.getElementById("runnerLatencyText");
+      const runnerEndpointText = document.getElementById("runnerEndpointText");
+      const runnerOutputPre = document.getElementById("runnerOutputPre");
+      const runnerCopyJsonBtn = document.getElementById("runnerCopyJsonBtn");
+
+      function updateUrlVisibility() {
+        const selectedOpt = runnerSelect.options[runnerSelect.selectedIndex];
+        const hasParam = selectedOpt && selectedOpt.getAttribute("data-param") === "url";
+        if (runnerUrlGroup) {
+          runnerUrlGroup.style.display = hasParam ? "flex" : "none";
+        }
+      }
+
+      runnerSelect.addEventListener("change", updateUrlVisibility);
+      updateUrlVisibility();
+
+      document.querySelectorAll(".try-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const ep = btn.getAttribute("data-endpoint");
+          const targetUrl = btn.getAttribute("data-url");
+
+          // Select matching option
+          for (let i = 0; i < runnerSelect.options.length; i++) {
+            if (runnerSelect.options[i].value === ep) {
+              runnerSelect.selectedIndex = i;
+              break;
+            }
+          }
+          if (targetUrl && runnerUrlInput) {
+            runnerUrlInput.value = targetUrl;
+          }
+          updateUrlVisibility();
+
+          // Scroll up smoothly to playground
+          document.getElementById("playground").scrollIntoView({ behavior: "smooth", block: "center" });
+
+          // Auto-run request
+          setTimeout(() => {
+            runnerForm.dispatchEvent(new Event("submit"));
+          }, 300);
+        });
+      });
+
+      // Execute request in console
+      runnerForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const selectedOpt = runnerSelect.options[runnerSelect.selectedIndex];
+        const ep = runnerSelect.value;
+        const hasParam = selectedOpt && selectedOpt.getAttribute("data-param") === "url";
+        const targetVal = runnerUrlInput.value.trim();
+
+        let reqUrl = ep;
+        if (hasParam && targetVal) {
+          reqUrl += (reqUrl.includes("?") ? "&" : "?") + "url=" + encodeURIComponent(targetVal);
+        }
+
+        runnerLoading.hidden = false;
+        runnerResults.hidden = true;
+        const startTime = performance.now();
+
+        try {
+          const res = await fetch(reqUrl, {
+            headers: { "Accept": "application/json, text/plain, */*" }
+          });
+          const duration = Math.round(performance.now() - startTime);
+          const status = res.status;
+          const statusText = res.statusText || (status === 200 ? "OK" : "Status " + status);
+          
+          let bodyText = "";
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const data = await res.json();
+            bodyText = JSON.stringify(data, null, 2);
+          } else {
+            bodyText = await res.text();
+            if (bodyText.length > 5000) {
+              bodyText = bodyText.slice(0, 5000) + "\n\n...[Truncated: " + bodyText.length + " bytes total]";
+            }
+          }
+
+          runnerStatusBadge.textContent = `${status} ${statusText}`;
+          runnerStatusBadge.className = "response-status-badge " + (res.ok ? "response-status-2xx" : "response-status-4xx");
+          runnerLatencyText.textContent = `${duration} ms`;
+          runnerEndpointText.textContent = reqUrl;
+          runnerOutputPre.textContent = bodyText;
+          runnerResults.hidden = false;
+        } catch (err) {
+          const duration = Math.round(performance.now() - startTime);
+          runnerStatusBadge.textContent = "Error";
+          runnerStatusBadge.className = "response-status-badge response-status-5xx";
+          runnerLatencyText.textContent = `${duration} ms`;
+          runnerEndpointText.textContent = reqUrl;
+          runnerOutputPre.textContent = "Request Error: " + (err instanceof Error ? err.message : String(err));
+          runnerResults.hidden = false;
+        } finally {
+          runnerLoading.hidden = true;
+        }
+      });
+
+      // Copy runner json
+      if (runnerCopyJsonBtn) {
+        runnerCopyJsonBtn.addEventListener("click", () => {
+          if (runnerOutputPre.textContent) {
+            navigator.clipboard.writeText(runnerOutputPre.textContent).then(() => {
+              runnerCopyJsonBtn.textContent = "Copied!";
+              setTimeout(() => { runnerCopyJsonBtn.textContent = "Copy Output"; }, 1500);
+            });
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

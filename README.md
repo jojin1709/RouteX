@@ -11,7 +11,7 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 [![Cloudflare Workers](https://img.shields.io/badge/Platform-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#zero-application-persistence)
-[![Tests Passing](https://img.shields.io/badge/Tests-106%2F106%20Passing-brightgreen.svg)](#automated-testing)
+[![Tests Passing](https://img.shields.io/badge/Tests-131%2F131%20Passing-brightgreen.svg)](#automated-testing)
 [![SSRF Protected](https://img.shields.io/badge/Security-Multi--Layer%20SSRF%20Defense-red.svg)](#security-model--ssrf-defense)
 [![Daytona Compatible](https://img.shields.io/badge/Compute-Daytona%20Sandboxes-blueviolet.svg)](#daytona-integration)
 
@@ -21,13 +21,10 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 
 No persistent databases. No cookies saved. No browsing history logs. **Pure stateless execution.**
 
-<p><strong>Quick Launch</strong></p>
+<p><strong>Access Live Production Service</strong></p>
 
-```bash
-npx wrangler deploy
-```
-
-<sub>Deploys directly to your Cloudflare Workers Free Tier environment in seconds.</sub>
+<p>RouteX is accessible worldwide via Cloudflare's global edge network:</p>
+<p>👉 <strong><a href="https://routex-web-gateway.apkscope.workers.dev/">https://routex-web-gateway.apkscope.workers.dev/</a></strong></p>
 
 ---
 
@@ -49,10 +46,9 @@ npx wrangler deploy
   - [Zero Application Persistence](#zero-application-persistence)
   - [What RouteX is NOT](#what-routex-is-not)
 - [RouteX in Action](#routex-in-action)
-- [Quick Start](#quick-start)
-  - [Prerequisites](#prerequisites)
-  - [Installation & Local Testing](#installation--local-testing)
-  - [Deploy to Cloudflare Workers](#deploy-to-cloudflare-workers)
+- [Live Gateway & Interactive API Catalog](#live-gateway--interactive-api-catalog)
+  - [Production Access](#production-access)
+  - [Interactive API Catalog & Playground](#interactive-api-catalog--playground)
 - [Key Capabilities](#key-capabilities)
 - [Architecture](#architecture)
 - [Daytona Integration](#daytona-integration)
@@ -138,44 +134,24 @@ All tests executed live against the production deployment at `https://routex-web
 
 ---
 
-## Quick Start
+## Live Gateway & Interactive API Catalog
 
-### Prerequisites
-- **Node.js**: v20+ or v22+ LTS
-- **Cloudflare Wrangler CLI**: Installed automatically via `devDependencies`
+### Production Access
 
-### Installation & Local Testing
+RouteX is permanently hosted and maintained as a managed, high-performance edge service on Cloudflare Workers. You can immediately access the dashboard or proxy web resources without local setup:
 
-```bash
-# 1. Clone repository
-git clone https://github.com/jojin1709/RouteX.git
-cd RouteX
+| Interface | URL | Purpose |
+| :--- | :--- | :--- |
+| **RouteX Dashboard** | [https://routex-web-gateway.apkscope.workers.dev/](https://routex-web-gateway.apkscope.workers.dev/) | Web UI with Proxy, 9-Probe Diagnostics, Browser Lab, and Inspector |
+| **Interactive API Catalog** | [https://routex-web-gateway.apkscope.workers.dev/api](https://routex-web-gateway.apkscope.workers.dev/api) | Full interactive documentation, endpoint catalog, and live edge API console |
+| **Streaming Web Proxy** | `https://routex-web-gateway.apkscope.workers.dev/proxy?url=https://example.com` | High-speed stateless proxy with automatic asset rewriting and SPA shimming |
+| **Health Check** | [https://routex-web-gateway.apkscope.workers.dev/health](https://routex-web-gateway.apkscope.workers.dev/health) | Edge operational health check and compute capabilities status |
 
-# 2. Install dependencies
-npm install
+### Interactive API Catalog & Playground
 
-# 3. Validate TypeScript types
-npm run typecheck
-
-# 4. Execute the automated 106-test suite
-npm test
-
-# 5. Start local development server
-npm run dev
-```
-
-### Deploy to Cloudflare Workers
-
-> [!WARNING]
-> Never deploy to production if local tests fail. Ensure `npm test` passes 100% of test cases before initiating deployment.
-
-```bash
-# Authenticate with Cloudflare
-npx wrangler login
-
-# Deploy live to Cloudflare Workers
-npm run deploy
-```
+The RouteX API directory dynamically negotiates content:
+- **Browser Requests (`Accept: text/html`)**: Delivers an interactive, dark-mode developer playground with live endpoint testing, parameter forms, latency measurements, and 1-click cURL generators.
+- **Programmatic Clients (`Accept: application/json` or `?format=json`)**: Returns structured JSON metadata indexing all available gateway routes, inspector tools, and sandboxes.
 
 ---
 
@@ -529,12 +505,38 @@ npm test
   [PASS] Daytona Limits: Max output bytes limit enforced at 5MB
   [PASS] Daytona Limits: Default timeout capped at 45 seconds
   [PASS] Gateway Independence: Normal RouteX proxy functions completely independently of Daytona
+  [PASS] Daytona Viewport: Mobile mode parsed correctly
+  [PASS] Daytona Viewport: Desktop mode defaulted when omitted
+  [PASS] Daytona Viewport: Query string viewport parameter parsed correctly
+  [PASS] Daytona Snapshot: Snapshot configured flag set when DAYTONA_SNAPSHOT present
+  [PASS] Daytona Snapshot: Snapshot configured flag false when DAYTONA_SNAPSHOT absent
+  [PASS] Daytona Error Handling: Unreachable target or client failure returns 502 Bad Gateway without crashing
+
+--- Section 5: HTTP Status Sanitization & Gateway Resilience ---
+  [PASS] Status Sanitization: Standard 200 OK preserved
+  [PASS] Status Sanitization: Standard 301 Redirect preserved
+  [PASS] Status Sanitization: Standard 404 Not Found preserved
+  [PASS] Status Sanitization: Standard 500 Server Error preserved
+  [PASS] Status Sanitization: Non-standard status 999 (LinkedIn Request Denied) safely mapped to 502
+  [PASS] Status Sanitization: Non-standard status < 200 mapped to 502
+  [PASS] Status Sanitization: Non-standard status > 599 mapped to 502
+  [PASS] StatusText Sanitization: Normal ASCII reason phrase preserved
+  [PASS] StatusText Sanitization: Empty or <none> string returns undefined
+  [PASS] StatusText Sanitization: Control characters and newlines stripped
+  [PASS] Regression Test: Worker /proxy handles non-standard upstream status 999 without throwing RangeError (Error 1101)
+  [PASS] Regression Test: Worker preserves original non-standard upstream code in X-Upstream-Status
+  [PASS] Regression Test: Gateway identifier X-RouteX-Gateway present on sanitized error response
+  [PASS] SPA Navigation: Direct unproxied route redirected to /proxy?url=... via cookie
+  [PASS] API Catalog: Returns JSON when requested via Accept: application/json
+  [PASS] API Catalog: Includes core, diagnostics and inspector endpoint groups
+  [PASS] API Catalog: Serves api.html when requested from a browser with Accept: text/html
+  [PASS] API Catalog: Returns JSON directly via /api.json
 
 ==================================================
   TEST SUMMARY
 ==================================================
-  TOTAL:  106 tests
-  PASSED: 106
+  TOTAL:  131 tests
+  PASSED: 131
   FAILED: 0
 
 All automated tests passed successfully!
@@ -548,7 +550,6 @@ All automated tests passed successfully!
 - **Cloudflare Turnstile**: Optional abuse control and CAPTCHA validation.
 - **Cloudflare WAF**: Rate limiting and edge traffic defense.
 - **Daytona**: Isolated ephemeral compute sandboxes for browser automation and Playwright tasks.
-- **Next.js / Vercel**: Frontend user interface (to be deployed in a separate phase).
 
 ---
 
@@ -565,8 +566,8 @@ All automated tests passed successfully!
 
 ## Common Questions (FAQ)
 
-### Can I self-host RouteX?
-Yes. You can fork or clone this repository, configure your own Cloudflare account via `npx wrangler login`, and deploy your own private gateway using `npx wrangler deploy`.
+### How can I access RouteX?
+You can access RouteX directly via the official live deployment at [https://routex-web-gateway.apkscope.workers.dev/](https://routex-web-gateway.apkscope.workers.dev/). It is globally distributed across 300+ Cloudflare edge locations with sub-20ms initial response latency and zero installation required.
 
 ### Is RouteX a VPN?
 No. RouteX is an application-level HTTP/HTTPS web gateway and URL-rewriting proxy. It does not provide TUN/TAP virtual network adapters, WireGuard routing, or device-wide traffic forwarding.

@@ -4,8 +4,9 @@
   const tabPanels = document.querySelectorAll('.tab-panel');
 
   tabButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
       const targetTab = btn.getAttribute('data-tab');
+      if (!targetTab) return;
 
       tabButtons.forEach((b) => {
         b.classList.remove('active');

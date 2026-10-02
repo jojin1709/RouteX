@@ -374,52 +374,77 @@ export default {
       }
     }
 
-    // --- API Directory ---
-    if (pathname === "/api" || pathname === "/api/") {
-      return Response.json({
-        service: "RouteX Web Gateway",
-        stateless: true,
-        storage: "none",
-        endpoints: {
-          core: ["/health", "/proxy?url=https://example.com"],
-          diagnostics: ["/diagnostics?url=https://example.com"],
-          inspectorTools: [
-            "/api/tools/headers?url=https://example.com",
-            "/api/tools/security-headers?url=https://example.com",
-            "/api/tools/redirects?url=https://example.com",
-            "/api/tools/links?url=https://example.com",
-            "/api/tools/robots?url=https://example.com",
-            "/api/tools/sitemap?url=https://example.com",
-            "/api/tools/json?url=https://httpbin.org/json",
-            "/api/tools/xml?url=https://httpbin.org/xml",
-            "/api/tools/response-info?url=https://example.com",
-          ],
-          abuseControl: ["/api/turnstile/verify?token=..."],
-          browserTools: [
-            "/api/browser/info",
-            "/api/browser/screenshot?url=https://example.com",
-            "/api/browser/pdf?url=https://example.com",
-            "/api/browser/rendered-html?url=https://example.com",
-          ],
-          daytonaTools: [
-            "/api/daytona/status",
-            "/api/tools/render (POST { url: 'https://example.com' })",
-            "/api/tools/screenshot (POST { url: 'https://example.com' })",
-            "/api/tools/pdf (POST { url: 'https://example.com' })",
-          ],
+    // --- API Directory & Interactive Reference ---
+    if (pathname === "/api" || pathname === "/api/" || pathname === "/api.json" || pathname === "/api/endpoints") {
+      const accept = request.headers.get("accept") || "";
+      const format = url.searchParams.get("format");
+      const isJsonExplicit = pathname === "/api.json" || pathname === "/api/endpoints" || format === "json";
+      const isHtmlExplicit = format === "html";
+      const isBrowser = !isJsonExplicit && (isHtmlExplicit || accept.includes("text/html"));
+
+      if (isBrowser && env.ASSETS && typeof env.ASSETS.fetch === "function") {
+        const assetReq = new Request(new URL("/api.html", request.url), request);
+        return env.ASSETS.fetch(assetReq);
+      }
+
+      return Response.json(
+        {
+          service: "RouteX Web Gateway",
+          version: "2.0.0",
+          stateless: true,
+          storage: "none",
+          docs: `${url.origin}/api`,
+          endpoints: {
+            core: ["/health", "/proxy?url=https://example.com"],
+            diagnostics: ["/diagnostics?url=https://example.com"],
+            inspectorTools: [
+              "/api/tools/security-headers?url=https://example.com",
+              "/api/tools/headers?url=https://example.com",
+              "/api/tools/redirects?url=https://example.com",
+              "/api/tools/links?url=https://example.com",
+              "/api/tools/robots?url=https://example.com",
+              "/api/tools/sitemap?url=https://example.com",
+              "/api/tools/json?url=https://httpbin.org/json",
+              "/api/tools/xml?url=https://httpbin.org/xml",
+              "/api/tools/response-info?url=https://example.com",
+            ],
+            browserTools: [
+              "/api/browser/info",
+              "/api/browser/screenshot?url=https://example.com",
+              "/api/browser/pdf?url=https://example.com",
+              "/api/browser/rendered-html?url=https://example.com",
+            ],
+            daytonaTools: [
+              "/api/daytona/status",
+              "/api/tools/render (POST { url: 'https://example.com' })",
+              "/api/tools/screenshot (POST { url: 'https://example.com' })",
+              "/api/tools/pdf (POST { url: 'https://example.com' })",
+            ],
+            abuseControl: ["/api/turnstile/verify?token=..."],
+          },
         },
-      });
+        {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
     }
 
     // --- Static Frontend Assets in public/ ---
     if (
       pathname === "/" ||
       pathname === "/index.html" ||
+      pathname === "/api.html" ||
       pathname === "/styles.css" ||
       pathname === "/app.js" ||
       pathname === "/favicon.ico"
     ) {
-      return env.ASSETS.fetch(request);
+      if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
+        return env.ASSETS.fetch(request);
+      }
+      return new Response("Not Found", { status: 404 });
     }
 
     // --- Fallback: Dynamic subresource and SPA navigation routing via Referer or target cookie ---
