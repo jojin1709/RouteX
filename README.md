@@ -1,5 +1,5 @@
 > [!NOTE]
-> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 9 stateless inspector tools, and multi-probe compatibility diagnostics.
+> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 9 stateless inspector tools, multi-probe compatibility diagnostics, and optional Daytona compute integration.
 
 <div align="center">
 
@@ -10,9 +10,10 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 
 [![Cloudflare Workers](https://img.shields.io/badge/Platform-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#privacy-model)
-[![Tests Passing](https://img.shields.io/badge/Tests-90%2F90%20Passing-brightgreen.svg)](#automated-testing)
+[![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#zero-application-persistence)
+[![Tests Passing](https://img.shields.io/badge/Tests-106%2F106%20Passing-brightgreen.svg)](#automated-testing)
 [![SSRF Protected](https://img.shields.io/badge/Security-Multi--Layer%20SSRF%20Defense-red.svg)](#security-model--ssrf-defense)
+[![Daytona Compatible](https://img.shields.io/badge/Compute-Daytona%20Sandboxes-blueviolet.svg)](#daytona-integration)
 
 <br/>
 
@@ -54,6 +55,12 @@ npx wrangler deploy
   - [Deploy to Cloudflare Workers](#deploy-to-cloudflare-workers)
 - [Key Capabilities](#key-capabilities)
 - [Architecture](#architecture)
+- [Daytona Integration](#daytona-integration)
+  - [Role in RouteX](#role-in-routex)
+  - [Daytona Architecture](#daytona-architecture)
+  - [Setup & Secrets](#setup--secrets)
+  - [Endpoints & Predefined Tools](#endpoints--predefined-tools)
+  - [Sandbox Lifecycle & Security Controls](#sandbox-lifecycle--security-controls)
 - [Security Model & SSRF Defense](#security-model--ssrf-defense)
   - [Prohibited Destinations](#prohibited-destinations)
   - [Allowed Protocols & Methods](#allowed-protocols--methods)
@@ -63,6 +70,7 @@ npx wrangler deploy
 - [Optional Cloudflare Browser Rendering](#optional-cloudflare-browser-rendering)
 - [Privacy Model & Platform Transparency](#privacy-model--platform-transparency)
 - [Automated Testing](#automated-testing)
+- [Technologies & Infrastructure](#technologies--infrastructure)
 - [About the Developer](#about-the-developer)
 - [Common Questions (FAQ)](#common-questions-faq)
 - [License](#license)
@@ -149,7 +157,7 @@ npm install
 # 3. Validate TypeScript types
 npm run typecheck
 
-# 4. Execute the automated 90-test suite
+# 4. Execute the automated 106-test suite
 npm test
 
 # 5. Start local development server
@@ -178,9 +186,9 @@ npm run deploy
 - **Relative CSS Engine**: Resolves `url(...)` and `@import` statements relative to the stylesheet's own origin, preventing broken assets on CDN-hosted styles.
 - **Double-Proxy Prevention**: Detects existing gateway prefixes and relative proxy query parameters to prevent recursive infinite proxy loops.
 - **Enterprise-Grade SSRF Shield**: Comprehensive IP range checking against loopback, private RFC1918, CGNAT, link-local metadata, IPv6 ULA, IPv4-mapped IPv6, and obfuscated octal/hex/decimal representations.
+- **Optional Daytona Sandboxes**: Isolated on-demand compute environments for Playwright browser tasks, screenshots, and PDF generation.
 - **Factual Compatibility Diagnostics Engine**: `GET /diagnostics` runs 9 independent technical probes to report factual compatibility (Full, Partial, or Limited).
 - **9 Stateless Web Inspector Tools**: Standalone endpoints for headers, security headers, redirect tracer, link extractor, robots.txt viewer, sitemap parser, JSON formatter, XML viewer, and response metadata.
-- **Decoupled Cloudflare Browser Rendering**: Optional add-on integration with graceful 501 fallback when `env.BROWSER` is absent, protecting Free tier quotas.
 - **Zero Persistent Datastores**: Absolutely no D1, KV, R2, Durable Objects, or external databases.
 
 ---
@@ -194,10 +202,15 @@ flowchart TD
     REQ["Incoming Client Request"] --> ROUTER{"RouteX Router"}
 
     ROUTER -- "/health" --> HEALTH["Health Status & Capabilities"]
+    ROUTER -- "/api/daytona/*" --> DAYTONA_STATUS["Daytona Status Check"]
+    ROUTER -- "/api/tools/render|screenshot|pdf" --> DAYTONA_TOOL{"Daytona Configured?"}
     ROUTER -- "/api/tools/*" --> TOOLS["9 Stateless Inspector Tools"]
     ROUTER -- "/diagnostics" --> DIAG["9-Probe Diagnostics Engine"]
     ROUTER -- "/api/browser/*" --> BROWSER{"Browser Rendering Binding?"}
     ROUTER -- "/proxy?url=..." --> SSRF{"SSRF & Security Shield"}
+
+    DAYTONA_TOOL -- "Configured" --> DAYTONA_BOX["Ephemeral Daytona Sandbox (Playwright)"]
+    DAYTONA_TOOL -- "Unconfigured" --> DAYTONA_501["501 Graceful Fallback"]
 
     BROWSER -- "Available" --> BR_EXEC["Execute Browser Headless Session"]
     BROWSER -- "Absent" --> BR_501["501 Graceful Fallback (Free Tier)"]
@@ -220,6 +233,87 @@ flowchart TD
 
 ---
 
+## Daytona Integration
+
+RouteX optionally supports **Daytona** for isolated browser and compute workloads.
+
+> [!IMPORTANT]
+> **Daytona is NOT required for the core RouteX gateway.**  
+> - **Core Gateway**: Cloudflare Workers (always handles standard web proxy requests independently).  
+> - **Optional Compute**: Daytona Sandboxes (created ephemerally on demand for Playwright browser tasks, screenshots, and PDF generation).
+
+### Daytona Architecture
+
+```text
+                    ROUTEX
+                       |
+              Cloudflare Worker
+                       |
+             ┌─────────┴─────────┐
+             |                   |
+        Web Gateway        Optional Tools
+             |                   |
+        Target Website       Daytona
+                                 |
+                         Isolated Sandbox
+                                 |
+                       Browser / Playwright
+```
+
+### Role in RouteX
+
+Daytona is utilized only for optional workloads that benefit from an isolated, ephemeral compute runtime:
+1. **Browser / Rendering Tasks**: Executing headless Chromium via Playwright to inspect fully rendered client-side DOMs.
+2. **Playwright Compatibility Testing**: Automated verification of dynamic pages that require client execution.
+3. **Screenshot Generation**: Capturing pixel-accurate viewport screenshots without local browser binaries.
+4. **PDF Generation**: Rendering print-accurate vector PDF documents.
+5. **Heavy Diagnostic Tasks**: Isolating resource-intensive audits away from edge proxy workers.
+
+### Setup & Secrets
+
+The Daytona API key is **never hardcoded** in source code and **never committed to Git**. It is supplied exclusively as an environment variable or Cloudflare Worker secret:
+
+```bash
+# Set secret in Cloudflare Workers environment
+npx wrangler secret put DAYTONA_API_KEY
+```
+
+For local development, store the key in `.dev.vars` (which is excluded from Git):
+```bash
+DAYTONA_API_KEY=your_daytona_api_key_here
+```
+
+### Endpoints & Predefined Tools
+
+| Endpoint | Method | Input | Description |
+| :--- | :---: | :--- | :--- |
+| `GET /api/daytona/status` | `GET` | None | Reports Daytona configuration and availability without exposing secrets. |
+| `POST /api/tools/render` | `POST` | `{"url": "https://example.com"}` | Runs Playwright in an ephemeral sandbox and returns rendered HTML. |
+| `POST /api/tools/screenshot` | `POST` | `{"url": "https://example.com"}` | Captures a high-resolution PNG screenshot via Playwright. |
+| `POST /api/tools/pdf` | `POST` | `{"url": "https://example.com"}` | Renders and returns a print-ready PDF document. |
+
+### Sandbox Lifecycle & Security Controls
+
+```text
+Create Ephemeral Sandbox
+       ↓
+Run Predefined RouteX Task (Playwright)
+       ↓
+Collect Result Payload (capped at 5MB)
+       ↓
+Guaranteed Cleanup / Delete (finally block)
+       ↓
+Return Response to Client
+```
+
+- **Zero Arbitrary Code Execution**: Public requests can never submit shell commands (`command: "..."`) or arbitrary code. Only fixed, predefined RouteX scripts are executed.
+- **SSRF Protection Enforced**: Destination URLs are validated by RouteX's SSRF engine before any sandbox is scheduled.
+- **Strict Execution Timeouts**: Tasks are bounded by a 45-second execution deadline.
+- **Output Size Caps**: Results are limited to 5 MB to prevent memory exhaustion.
+- **Guaranteed Cleanup**: Sandboxes are created with `ephemeral: true` and explicitly deleted in a `finally` block to protect Free tier allowances.
+
+---
+
 ## Security Model & SSRF Defense
 
 RouteX implements a comprehensive multi-layered Server-Side Request Forgery defense before any network connection is attempted.
@@ -237,7 +331,7 @@ Requests to any of the following are terminated at the edge with `400 Bad Reques
 | **Cloud Metadata & Link-Local** | `169.254.0.0/16` (`169.254.169.254`), `metadata.google.internal`, `instance-data` |
 | **IPv6 Restricted** | Link-Local (`fe80::/10`), Unique Local (`fc00::/7`), IPv4-mapped IPv6 (`::ffff:127.0.0.1`) |
 | **Obfuscated Encodings** | Octal (e.g. `0177.0.0.1`), Hex (e.g. `0x7f.0.0.1`), Decimal integer (e.g. `2130706433`) |
-| **Internal TLDs** | `.local`, `.internal`, `.localhost`, `.onion` |
+| **Internal & Single-Label Domains** | Single-label hosts without dots, `.local`, `.internal`, `.localhost`, `.onion` |
 | **Unsupported Schemes** | `file://`, `ftp://`, `gopher://`, `javascript:`, `data:`, `ws://`, `wss://` |
 | **Embedded Credentials** | `http://user:pass@host` (rejected & stripped) |
 
@@ -310,7 +404,7 @@ Do not claim that "nothing anywhere is stored." Cloudflare as the underlying edg
 
 ## Automated Testing
 
-RouteX is backed by an automated 90-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, and diagnostics:
+RouteX is backed by an automated 106-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
 
 ```bash
 npm test
@@ -418,15 +512,43 @@ npm test
   [PASS] Browser Tools: Correctly reports unavailable when env.BROWSER is absent
   [PASS] Turnstile: Cleanly handles unconfigured secret key
 
+--- Section 4: Optional Daytona Integration & Security ---
+  [PASS] Daytona Disabled: Correctly reports disabled when DAYTONA_API_KEY is absent
+  [PASS] Daytona Disabled: getDaytonaStatus reports configured=false and enabled=false
+  [PASS] Daytona Configured: Correctly reports configured when key present
+  [PASS] Daytona Configured: getDaytonaStatus reports configured=true and enabled=true
+  [PASS] Daytona Unconfigured: Tool request returns 501 Not Implemented
+  [PASS] Daytona Security: Invalid URL is rejected with 400 Bad Request
+  [PASS] Daytona Security: SSRF loopback target is rejected with 400
+  [PASS] Daytona Security: Cloud metadata target is rejected with 400
+  [PASS] Daytona Security: file:// protocol is rejected with 400
+  [PASS] Daytona Security: Arbitrary command parameter without url is rejected with 400
+  [PASS] Daytona Parser: Render tool target correctly parsed and validated
+  [PASS] Daytona Parser: Screenshot tool target correctly parsed and validated
+  [PASS] Daytona Parser: PDF tool target correctly parsed from query string
+  [PASS] Daytona Limits: Max output bytes limit enforced at 5MB
+  [PASS] Daytona Limits: Default timeout capped at 45 seconds
+  [PASS] Gateway Independence: Normal RouteX proxy functions completely independently of Daytona
+
 ==================================================
   TEST SUMMARY
 ==================================================
-  TOTAL:  90 tests
-  PASSED: 90
+  TOTAL:  106 tests
+  PASSED: 106
   FAILED: 0
 
 All automated tests passed successfully!
 ```
+
+---
+
+## Technologies & Infrastructure
+
+- **Cloudflare Workers**: Primary serverless edge runtime and streaming proxy.
+- **Cloudflare Turnstile**: Optional abuse control and CAPTCHA validation.
+- **Cloudflare WAF**: Rate limiting and edge traffic defense.
+- **Daytona**: Isolated ephemeral compute sandboxes for browser automation and Playwright tasks.
+- **Next.js / Vercel**: Frontend user interface (to be deployed in a separate phase).
 
 ---
 
@@ -453,10 +575,10 @@ No. RouteX is an application-level HTTP/HTTPS web gateway and URL-rewriting prox
 No. RouteX is completely stateless at the application level. It has no database bindings (no KV, D1, R2, or Durable Objects) and does not store browsing histories, target URLs, or user accounts.
 
 ### How does SSRF protection work?
-Before fetching any destination, RouteX validates the hostname, scheme, and IP address. Any attempt to access loopback (`127.0.0.0/8`, `::1`), private ranges (`10.x`, `172.16.x`, `192.168.x`), cloud metadata services (`169.254.169.254`), or obfuscated IP encodings is immediately blocked with `400 Bad Request`.
+Before fetching any destination, RouteX validates the hostname, scheme, and IP address. Any attempt to access loopback (`127.0.0.0/8`, `::1`), private ranges (`10.x`, `172.16.x`, `192.168.x`), cloud metadata services (`169.254.169.254`), single-label local hostnames, or obfuscated IP encodings is immediately blocked with `400 Bad Request`.
 
-### Why do some single-page apps (like TikTok) show hydration warnings?
-Client-side SPAs (such as Remix or Next.js) often compare the browser's `window.location.pathname` with server hydration data. When proxied under `/proxy?url=...`, client hydration mismatches can occur. RouteX does not bypass or alter target anti-bot or device-fingerprinting scripts.
+### How does Daytona fit into RouteX?
+Daytona acts as an optional compute backend for tasks requiring an isolated browser engine (Playwright rendering, screenshots, and PDFs). The core RouteX proxy never depends on Daytona and continues functioning normally if Daytona is unconfigured or unreachable.
 
 ---
 

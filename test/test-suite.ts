@@ -8,6 +8,14 @@ import { resolveAndProxy, rewriteSrcset, rewriteCss, rewriteHtml, buildResponseH
 import { runDiagnostics } from "../src/diagnostics.ts";
 import { checkSecurityHeaders, formatJson, viewXml } from "../src/tools.ts";
 import { isBrowserRenderingAvailable } from "../src/browser.ts";
+import {
+  getDaytonaStatus,
+  isDaytonaConfigured,
+  handleDaytonaTool,
+  parseAndValidateTarget,
+  MAX_DAYTONA_OUTPUT_BYTES,
+  DEFAULT_DAYTONA_TIMEOUT_SECONDS,
+} from "../src/daytona.ts";
 import { verifyTurnstileToken } from "../src/turnstile.ts";
 import type { Env } from "../src/types.ts";
 
@@ -307,6 +315,103 @@ async function runAllTests() {
 
   const turnstileCheck = await verifyTurnstileToken("dummy-token", null, mockEnv);
   test("Turnstile: Cleanly handles unconfigured secret key", turnstileCheck.success === false && Boolean(turnstileCheck.errorCodes?.[0]?.includes("missing")));
+
+  // ----------------------------------------------------
+  // SECTION 4: OPTIONAL DAYTONA INTEGRATION & SECURITY
+  // ----------------------------------------------------
+  console.log("\n--- Section 4: Optional Daytona Integration & Security ---");
+
+  // 4.1 Configuration state detection
+  test("Daytona Disabled: Correctly reports disabled when DAYTONA_API_KEY is absent", isDaytonaConfigured(mockEnv) === false);
+  const statusDisabled = getDaytonaStatus(mockEnv);
+  test("Daytona Disabled: getDaytonaStatus reports configured=false and enabled=false", statusDisabled.configured === false && statusDisabled.enabled === false);
+
+  const mockDaytonaEnv: Env = { ASSETS: {} as any, DAYTONA_API_KEY: "dtn_test_secret_key" };
+  test("Daytona Configured: Correctly reports configured when key present", isDaytonaConfigured(mockDaytonaEnv) === true);
+  const statusConfigured = getDaytonaStatus(mockDaytonaEnv);
+  test("Daytona Configured: getDaytonaStatus reports configured=true and enabled=true", statusConfigured.configured === true && statusConfigured.enabled === true);
+
+  // 4.2 Missing API Key execution returns 501
+  const renderUnconfiguredReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com" }),
+  });
+  const resUnconfigured = await handleDaytonaTool(renderUnconfiguredReq, mockEnv, "render");
+  test("Daytona Unconfigured: Tool request returns 501 Not Implemented", resUnconfigured.status === 501);
+
+  // 4.3 Target URL validation & SSRF protection inside Daytona tool handler
+  const invalidUrlReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "not-a-valid-domain" }),
+  });
+  const resInvalid = await handleDaytonaTool(invalidUrlReq, mockDaytonaEnv, "render");
+  test("Daytona Security: Invalid URL is rejected with 400 Bad Request", resInvalid.status === 400);
+
+  const ssrfReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "http://127.0.0.1/admin" }),
+  });
+  const resSSRF = await handleDaytonaTool(ssrfReq, mockDaytonaEnv, "render");
+  test("Daytona Security: SSRF loopback target is rejected with 400", resSSRF.status === 400);
+
+  const metadataReq = new Request("https://gateway/api/tools/screenshot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "http://169.254.169.254/latest/meta-data" }),
+  });
+  const resMetadata = await handleDaytonaTool(metadataReq, mockDaytonaEnv, "screenshot");
+  test("Daytona Security: Cloud metadata target is rejected with 400", resMetadata.status === 400);
+
+  const unsupportedProtoReq = new Request("https://gateway/api/tools/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "file:///etc/passwd" }),
+  });
+  const resProto = await handleDaytonaTool(unsupportedProtoReq, mockDaytonaEnv, "pdf");
+  test("Daytona Security: file:// protocol is rejected with 400", resProto.status === 400);
+
+  // 4.4 Arbitrary command execution prevention
+  const commandInjectionReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command: "rm -rf /" }),
+  });
+  const resCommand = await handleDaytonaTool(commandInjectionReq, mockDaytonaEnv, "render");
+  test("Daytona Security: Arbitrary command parameter without url is rejected with 400", resCommand.status === 400);
+
+  // 4.5 Tool target extraction & parameter validation
+  const validRenderReq = new Request("https://gateway/api/tools/render", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/page" }),
+  });
+  const parsedRender = await parseAndValidateTarget(validRenderReq);
+  test("Daytona Parser: Render tool target correctly parsed and validated", parsedRender.hostname === "example.com" && parsedRender.pathname === "/page");
+
+  const validScreenshotReq = new Request("https://gateway/api/tools/screenshot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/dashboard" }),
+  });
+  const parsedScreenshot = await parseAndValidateTarget(validScreenshotReq);
+  test("Daytona Parser: Screenshot tool target correctly parsed and validated", parsedScreenshot.hostname === "example.com");
+
+  const validPdfReq = new Request("https://gateway/api/tools/pdf?url=https%3A%2F%2Fexample.com%2Fdoc", {
+    method: "GET",
+  });
+  const parsedPdf = await parseAndValidateTarget(validPdfReq);
+  test("Daytona Parser: PDF tool target correctly parsed from query string", parsedPdf.pathname === "/doc");
+
+  // 4.6 Strict limits
+  test("Daytona Limits: Max output bytes limit enforced at 5MB", MAX_DAYTONA_OUTPUT_BYTES === 5 * 1024 * 1024);
+  test("Daytona Limits: Default timeout capped at 45 seconds", DEFAULT_DAYTONA_TIMEOUT_SECONDS === 45);
+
+  // 4.7 Gateway independence: Normal RouteX proxy remains fully functional
+  const proxyIndependenceCheck = resolveAndProxy("/test", new URL("https://example.com"));
+  test("Gateway Independence: Normal RouteX proxy functions completely independently of Daytona", proxyIndependenceCheck.includes("/proxy?url=https%3A%2F%2Fexample.com%2Ftest"));
 
   // ----------------------------------------------------
   // TEST SUMMARY

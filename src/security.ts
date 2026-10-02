@@ -140,6 +140,9 @@ export function isBlockedHostname(hostname: string): boolean {
   // Suspicious hexadecimal numbers (e.g. 0x7f000001)
   if (/^0x[0-9a-f]+$/i.test(host)) return true;
 
+  // Reject single-label hostnames without dots (internal/local network names e.g. 'intranet', 'corp')
+  if (!host.includes(".")) return true;
+
   return false;
 }
 

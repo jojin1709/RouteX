@@ -14,6 +14,7 @@
  */
 
 import { handleBrowserTool, isBrowserRenderingAvailable } from "./browser.ts";
+import { getDaytonaStatus, handleDaytonaTool } from "./daytona.ts";
 import { runDiagnostics } from "./diagnostics.ts";
 import { buildResponseHeaders, gatewayUrl, rewriteCss, rewriteHtml } from "./rewriter.ts";
 import { MAX_HTML_SIZE_BYTES, normalizeTarget } from "./security.ts";
@@ -243,6 +244,22 @@ export default {
       return Response.json(report);
     }
 
+    // --- Daytona Integration Status Endpoint ---
+    if (pathname === "/api/daytona/status" || pathname === "/api/tools/daytona/status") {
+      return Response.json(getDaytonaStatus(env));
+    }
+
+    // --- Optional Daytona Sandboxed Tools (Render, Screenshot, PDF) ---
+    if (pathname === "/api/tools/render") {
+      return handleDaytonaTool(request, env, "render");
+    }
+    if (pathname === "/api/tools/screenshot") {
+      return handleDaytonaTool(request, env, "screenshot");
+    }
+    if (pathname === "/api/tools/pdf") {
+      return handleDaytonaTool(request, env, "pdf");
+    }
+
     // --- Phase 5: Stateless Inspector Tools ---
     if (pathname.startsWith("/api/tools/")) {
       const target = url.searchParams.get("url");
@@ -340,6 +357,12 @@ export default {
             "/api/browser/screenshot?url=https://example.com",
             "/api/browser/pdf?url=https://example.com",
             "/api/browser/rendered-html?url=https://example.com",
+          ],
+          daytonaTools: [
+            "/api/daytona/status",
+            "/api/tools/render (POST { url: 'https://example.com' })",
+            "/api/tools/screenshot (POST { url: 'https://example.com' })",
+            "/api/tools/pdf (POST { url: 'https://example.com' })",
           ],
         },
       });

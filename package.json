@@ -14,5 +14,8 @@
     "@cloudflare/workers-types": "latest",
     "typescript": "latest",
     "wrangler": "latest"
+  },
+  "dependencies": {
+    "@daytona/sdk": "^0.220.0"
   }
 }
