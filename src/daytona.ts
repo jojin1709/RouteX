@@ -129,7 +129,7 @@ function buildPredefinedScript(tool: DaytonaTool, targetUrl: string, viewport: V
     : "{ width: 1280, height: 720 }";
 
   return `
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 
 (async () => {
   let browser;
@@ -138,7 +138,11 @@ const { chromium } = require('playwright');
   const startTime = Date.now();
 
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-quic']
+    });
     const page = await browser.newPage({ viewport: ${viewportConfig} });
 
     page.on('console', msg => {
@@ -165,6 +169,7 @@ const { chromium } = require('playwright');
 
     const durationMs = Date.now() - startTime;
     const output = JSON.stringify({
+      ok: true,
       payload,
       consoleLogs,
       requestCount,
@@ -174,8 +179,16 @@ const { chromium } = require('playwright');
 
     console.log('---ROUTEX_START---' + output + '---ROUTEX_END---');
   } catch (err) {
-    console.error('TaskError:', err.message);
-    process.exit(1);
+    const durationMs = Date.now() - startTime;
+    const output = JSON.stringify({
+      ok: false,
+      error: err && err.message ? err.message : String(err),
+      consoleLogs,
+      requestCount,
+      durationMs,
+      viewport: '${viewport}'
+    });
+    console.log('---ROUTEX_START---' + output + '---ROUTEX_END---');
   } finally {
     if (browser) await browser.close();
   }
@@ -272,10 +285,11 @@ export async function handleDaytonaTool(
     }
 
     // Execute predefined node task with strict timeout
-    // If snapshot is used, chromium/playwright are pre-installed; otherwise install on the fly
+    // Daytona sandboxes have Chromium pre-installed at /usr/bin/chromium.
+    // If snapshot is used, playwright-core is pre-installed; otherwise install playwright-core in ~1s
     const execCommand = snapshotName
       ? "node /tmp/routex_task.js"
-      : "npx -y playwright install --with-deps chromium && node /tmp/routex_task.js";
+      : "npm i --no-save playwright-core && node /tmp/routex_task.js";
 
     const execResponse = await sandbox.process.executeCommand(
       execCommand,
@@ -320,7 +334,9 @@ export async function handleDaytonaTool(
     }
 
     let parsedResult: {
-      payload: string;
+      ok?: boolean;
+      error?: string;
+      payload?: string;
       consoleLogs: Array<{ type: string; text: string }>;
       requestCount: number;
       durationMs: number;
@@ -336,6 +352,22 @@ export async function handleDaytonaTool(
           tool,
           target: target.toString(),
           error: "Failed to parse tool execution response.",
+        },
+        { status: 502 }
+      );
+    }
+
+    if (parsedResult.ok === false) {
+      return Response.json(
+        {
+          ok: false,
+          tool,
+          target: target.toString(),
+          viewport,
+          error: parsedResult.error || "Sandbox task failed during page execution.",
+          consoleLogs: parsedResult.consoleLogs,
+          durationMs: parsedResult.durationMs,
+          requestCount: parsedResult.requestCount,
         },
         { status: 502 }
       );

@@ -3,6 +3,10 @@
 
 <div align="center">
 
+<a href="https://routex-web-gateway.apkscope.workers.dev">
+  <img src="public/favicon.svg" width="96" height="96" alt="RouteX Logo" />
+</a>
+
 # ⚡ RouteX
 ### High-Performance Stateless HTTP/HTTPS Web Gateway for Cloudflare Workers
 
