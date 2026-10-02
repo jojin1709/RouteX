@@ -161,7 +161,99 @@ export function rewriteHtml(html: string, pageUrl: URL): string {
     return `${attr}="${resolveAndProxy(rawVal, activeBase)}"`;
   });
 
+  // 7. Inject client-side SPA navigation shim so Next.js/React router stays inside gateway
+  const shim = buildSpaNavigationShim(activeBase);
+  if (/<head\b[^>]*>/i.test(rewritten)) {
+    rewritten = rewritten.replace(/<head\b[^>]*>/i, (m) => `${m}\n${shim}`);
+  } else if (/<html\b[^>]*>/i.test(rewritten)) {
+    rewritten = rewritten.replace(/<html\b[^>]*>/i, (m) => `${m}\n<head>${shim}</head>`);
+  } else {
+    rewritten = `${shim}\n${rewritten}`;
+  }
+
   return rewritten;
+}
+
+/**
+ * Builds lightweight, non-invasive client-side navigation shim.
+ * Intercepts history.pushState, window.fetch, and link clicks so Single Page Applications
+ * (Next.js App Router, React, Vue, Remix) stay seamlessly inside the RouteX gateway.
+ */
+export function buildSpaNavigationShim(pageUrl: URL): string {
+  const safeOrigin = pageUrl.origin.replace(/"/g, '\\"');
+  const safeUrl = pageUrl.toString().replace(/"/g, '\\"');
+
+  return `<script id="__routex_spa_shim">
+(function() {
+  if (window.__routex_shim_installed) return;
+  window.__routex_shim_installed = true;
+
+  var targetOrigin = "${safeOrigin}";
+  var targetUrl = "${safeUrl}";
+  var gatewayOrigin = window.location.origin;
+
+  function wrapUrl(url) {
+    if (!url || typeof url !== "string") return url;
+    var trimmed = url.trim();
+    if (!trimmed || trimmed.startsWith("#") || /^(?:javascript|data|blob|mailto|tel):/i.test(trimmed)) return url;
+    if (trimmed.startsWith("/proxy?url=") || trimmed.startsWith(gatewayOrigin + "/proxy?url=")) return url;
+    try {
+      var resolved = new URL(trimmed, targetUrl);
+      if (resolved.origin === targetOrigin) {
+        return gatewayOrigin + "/proxy?url=" + encodeURIComponent(resolved.toString());
+      }
+    } catch(e) {}
+    return url;
+  }
+
+  // 1. Intercept SPA routing (Next.js, Remix, React Router, Vue, Nuxt)
+  var origPushState = history.pushState;
+  var origReplaceState = history.replaceState;
+  history.pushState = function(state, title, url) {
+    return origPushState.call(history, state, title, wrapUrl(url));
+  };
+  history.replaceState = function(state, title, url) {
+    return origReplaceState.call(history, state, title, wrapUrl(url));
+  };
+
+  // 2. Intercept window.fetch from client components and RSC payloads
+  var origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    if (typeof input === "string") {
+      input = wrapUrl(input);
+    } else if (input && typeof input.url === "string") {
+      try {
+        var wrapped = wrapUrl(input.url);
+        if (wrapped !== input.url) {
+          input = new Request(wrapped, input);
+        }
+      } catch(e) {}
+    }
+    return origFetch.call(this, input, init);
+  };
+
+  // 3. Intercept XMLHttpRequest for dynamic client requests
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    arguments[1] = wrapUrl(url);
+    return origOpen.apply(this, arguments);
+  };
+
+  // 4. Intercept clicks on links that may be dynamically rendered
+  document.addEventListener("click", function(e) {
+    var a = e.target && e.target.closest ? e.target.closest("a") : null;
+    if (a) {
+      var rawHref = a.getAttribute("href");
+      if (rawHref) {
+        var wrapped = wrapUrl(rawHref);
+        if (wrapped && wrapped !== rawHref) {
+          a.setAttribute("href", wrapped);
+        }
+      }
+    }
+  }, true);
+})();
+</script>`;
 }
 
 /**
@@ -199,7 +291,8 @@ export function buildResponseHeaders(source: Response, isRewrittenText: boolean)
 
   h.set("X-RouteX-Gateway", "1");
   h.set("X-Content-Type-Options", "nosniff");
-  h.set("Referrer-Policy", "no-referrer");
+  // Use same-origin Referrer-Policy so gateway subresource & SPA fallback routing works
+  h.set("Referrer-Policy", "same-origin");
 
   // Allow cross-origin asset loading for proxied sub-resources
   h.set("Access-Control-Allow-Origin", "*");

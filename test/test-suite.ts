@@ -186,6 +186,7 @@ async function runAllTests() {
   test("HTML POST <form action> left untouched", rewrittenHtml.includes('action="/login"'));
   test("HTML inline style attribute rewritten", rewrittenHtml.includes(resolveAndProxy("inline.png", baseHtmlUrl)));
   test("HTML <style> block rewritten", rewrittenHtml.includes(resolveAndProxy("box.png", baseHtmlUrl)));
+  test("HTML SPA navigation shim injected", rewrittenHtml.includes('id="__routex_spa_shim"'));
 
   // 1.10 Response Header Sanitization
   const mockHeaders = new Headers({
@@ -482,6 +483,17 @@ async function runAllTests() {
   test("Regression Test: Worker /proxy handles non-standard upstream status 999 without throwing RangeError (Error 1101)", linkedInRes.status === 502);
   test("Regression Test: Worker preserves original non-standard upstream code in X-Upstream-Status", linkedInRes.headers.get("X-Upstream-Status") === "999");
   test("Regression Test: Gateway identifier X-RouteX-Gateway present on sanitized error response", linkedInRes.headers.get("X-RouteX-Gateway") === "1");
+
+  // SPA navigation test: Direct /tools?category=Image should 302 redirect to /proxy?url=...
+  const spaCatReq = new Request("https://gateway/tools?category=Image", {
+    method: "GET",
+    headers: {
+      "Cookie": "__routex_target=https%3A%2F%2Ftoolify-we.vercel.app",
+      "Accept": "text/html,application/xhtml+xml",
+    },
+  });
+  const spaCatRes = await worker.fetch(spaCatReq, regressionEnv);
+  test("SPA Navigation: Direct unproxied route redirected to /proxy?url=... via cookie", spaCatRes.status === 302 && Boolean(spaCatRes.headers.get("Location")?.includes("/proxy?url=")));
 
   // ----------------------------------------------------
   // TEST SUMMARY

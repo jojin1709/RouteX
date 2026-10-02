@@ -198,6 +198,7 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     const rewrittenHtml = rewriteHtml(htmlText, target);
     const outHeaders = buildResponseHeaders(upstream, true);
     outHeaders.set("Content-Type", "text/html; charset=utf-8");
+    outHeaders.set("Set-Cookie", `__routex_target=${encodeURIComponent(target.origin)}; Path=/; SameSite=Lax`);
     if (safeStatus !== upstream.status) {
       outHeaders.set("X-Upstream-Status", String(upstream.status));
     }
@@ -421,19 +422,43 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
-    // --- Fallback: Dynamic subresource request routing via HTTP Referer ---
+    // --- Fallback: Dynamic subresource and SPA navigation routing via Referer or target cookie ---
     const referer = request.headers.get("Referer");
+    const cookieHeader = request.headers.get("Cookie") || "";
+    const cookieMatch = cookieHeader.match(/__routex_target=([^;]+)/);
+    const cookieTarget = cookieMatch ? decodeURIComponent(cookieMatch[1].trim()) : null;
+
+    let parentTarget: string | null = null;
     if (referer) {
       try {
         const refUrl = new URL(referer);
-        const parentTarget = refUrl.searchParams.get("url");
-        if (parentTarget) {
-          const resolved = new URL(pathname + url.search, parentTarget);
-          const proxiedUrl = new URL(request.url);
-          proxiedUrl.pathname = "/proxy";
-          proxiedUrl.search = `?url=${encodeURIComponent(resolved.toString())}`;
-          return proxy(new Request(proxiedUrl.toString(), request), env);
+        parentTarget = refUrl.searchParams.get("url");
+      } catch {}
+    }
+    if (!parentTarget && cookieTarget) {
+      parentTarget = cookieTarget;
+    }
+    if (parentTarget) {
+      try {
+        const resolved = new URL(pathname + url.search, parentTarget);
+        const isHtmlNav = (request.headers.get("Accept") || "").includes("text/html");
+
+        // For browser top-level HTML navigation, redirect to /proxy?url=... so address bar updates
+        if (isHtmlNav && request.method === "GET") {
+          return new Response(null, {
+            status: 302,
+            headers: {
+              Location: `/proxy?url=${encodeURIComponent(resolved.toString())}`,
+              "X-RouteX-Gateway": "1",
+            },
+          });
         }
+
+        // For subresources (JS, CSS, RSC payloads, fonts, API calls), proxy directly
+        const proxiedUrl = new URL(request.url);
+        proxiedUrl.pathname = "/proxy";
+        proxiedUrl.search = `?url=${encodeURIComponent(resolved.toString())}`;
+        return proxy(new Request(proxiedUrl.toString(), request), env);
       } catch {}
     }
 
