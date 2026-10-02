@@ -259,8 +259,17 @@ export async function handleDaytonaTool(
     // 4. Predefined task script (no arbitrary user commands permitted)
     const script = buildPredefinedScript(tool, target.toString(), viewport);
 
-    // Write script to sandbox
-    await sandbox.fs.uploadFile("/tmp/routex_task.js", Buffer.from(script, "utf-8"));
+    // Write script to sandbox safely via sandbox process (bypasses serverless 'fs' requirement)
+    const base64Script = Buffer.from(script, "utf-8").toString("base64");
+    const writeResult = await sandbox.process.executeCommand(
+      `sh -c 'echo "${base64Script}" | base64 -d > /tmp/routex_task.js'`,
+      "/tmp",
+      undefined,
+      15
+    );
+    if (writeResult.exitCode !== 0 && writeResult.exitCode !== undefined) {
+      throw new Error(`Failed to initialize task script in sandbox: ${writeResult.result || "exit " + writeResult.exitCode}`);
+    }
 
     // Execute predefined node task with strict timeout
     // If snapshot is used, chromium/playwright are pre-installed; otherwise install on the fly
