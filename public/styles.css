@@ -26,6 +26,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   background-color: var(--bg-canvas);
   color: var(--text-primary);
