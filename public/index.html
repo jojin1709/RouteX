@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="RouteX — a stateless Cloudflare-powered web gateway.">
+  <title>RouteX — Private Web Gateway</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="nav">
+      <a class="brand" href="/" aria-label="RouteX home"><span class="mark">R</span><span>RouteX</span></a>
+      <div class="nav-status"><span class="dot"></span> Stateless gateway</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">CLOUDFLARE POWERED · NO ACCOUNT</div>
+        <h1>Browse through<br><span>RouteX.</span></h1>
+        <p class="lead">A lightweight web gateway designed to process requests without creating a browsing-history database.</p>
+
+        <form id="proxyForm" class="proxy-card">
+          <label for="url">Website URL</label>
+          <div class="input-row">
+            <span class="lock">↗</span>
+            <input id="url" name="url" type="text" inputmode="url" autocomplete="off" placeholder="https://example.com" required>
+            <button type="submit">Open <span>→</span></button>
+          </div>
+          <div id="error" class="error" role="alert" hidden></div>
+        </form>
+
+        <div class="trust-row">
+          <span>✓ No accounts required</span>
+          <span>✓ No browsing history stored by RouteX</span>
+          <span>✓ HTTPS supported</span>
+        </div>
+      </section>
+
+      <section class="features">
+        <article><div class="icon">↗</div><h2>Simple</h2><p>Enter a URL and RouteX forwards a compatible web request through the Cloudflare Worker.</p></article>
+        <article><div class="icon">◌</div><h2>Stateless</h2><p>No D1, KV, R2, accounts, or application database are required for the core gateway.</p></article>
+        <article><div class="icon">◇</div><h2>Protected</h2><p>Destination validation rejects local and private IPv4 targets to reduce server-side request abuse.</p></article>
+      </section>
+
+      <section class="notice">
+        <div><strong>What RouteX is</strong><p>A web gateway for HTTP/HTTPS requests. It is not a device-level VPN and does not tunnel arbitrary mobile-app traffic.</p></div>
+        <div><strong>Privacy note</strong><p>RouteX does not intentionally persist URLs, page content, cookies, or browsing history. Cloudflare may still process operational/security data under its own policies.</p></div>
+      </section>
+    </main>
+
+    <footer><span>RouteX</span><span>Built for Cloudflare Workers</span><a href="/health">Health</a></footer>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
