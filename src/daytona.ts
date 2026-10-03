@@ -143,7 +143,10 @@ const { chromium } = require('playwright-core');
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-quic']
     });
-    const page = await browser.newPage({ viewport: ${viewportConfig} });
+    const page = await browser.newPage({
+      viewport: ${viewportConfig},
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    });
 
     page.on('console', msg => {
       if (consoleLogs.length < 25) {
@@ -151,10 +154,19 @@ const { chromium } = require('playwright-core');
       }
     });
 
-    page.on('request', () => { requestCount++; });
-
-    const waitCondition = '${tool}' === 'render' ? 'domcontentloaded' : 'networkidle';
-    await page.goto("${safeTarget}", { waitUntil: waitCondition, timeout: 25000 });
+    try {
+      await page.goto("${safeTarget}", { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (navErr) {
+      try {
+        await page.goto("${safeTarget}", { waitUntil: 'commit', timeout: 8000 });
+      } catch (_commitErr) {
+        throw navErr;
+      }
+    }
+    if ('${tool}' !== 'render') {
+      await page.waitForLoadState('networkidle', { timeout: 3500 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 600));
+    }
 
     let payload = '';
     if ('${tool}' === 'render') {
