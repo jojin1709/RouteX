@@ -20,12 +20,15 @@ import { buildResponseHeaders, gatewayUrl, rewriteCss, rewriteHtml } from "./rew
 import { MAX_HTML_SIZE_BYTES, normalizeTarget } from "./security.ts";
 import {
   checkSecurityHeaders,
+  executeBatch,
   extractLinks,
   extractMarkdown,
   extractMetadata,
   formatJson,
   inspectHeaders,
   inspectTls,
+  lookupArchive,
+  lookupCert,
   lookupDns,
   lookupWhois,
   parseFeed,
@@ -35,6 +38,7 @@ import {
   viewRobots,
   viewXml,
 } from "./tools.ts";
+import { handleMcpRequest } from "./mcp.ts";
 import { openApiSpec } from "./openapi.ts";
 import { verifyTurnstileToken } from "./turnstile.ts";
 import type { Env } from "./types.ts";
@@ -328,6 +332,74 @@ export default {
       });
     }
 
+    // --- Edge Client IP & Datacenter / Colo Inspector ---
+    if (pathname === "/ip" || pathname === "/my-ip") {
+      const clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
+      const cf = (request as any).cf || {};
+      return Response.json(
+        {
+          ip: clientIp,
+          colo: cf.colo || "unknown",
+          country: cf.country || "unknown",
+          city: cf.city || "unknown",
+          region: cf.region || "unknown",
+          postalCode: cf.postalCode || "unknown",
+          asn: cf.asn || 0,
+          asOrganization: cf.asOrganization || "unknown",
+          timezone: cf.timezone || "unknown",
+          httpProtocol: cf.httpProtocol || "HTTP/1.1",
+          tlsVersion: cf.tlsVersion || "TLSv1.3",
+          tlsCipher: cf.tlsCipher || "unknown",
+        },
+        {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store, no-cache",
+          },
+        }
+      );
+    }
+
+    // --- Developer Request Echo Endpoint ---
+    if (pathname === "/echo") {
+      const headersObj: Record<string, string> = {};
+      request.headers.forEach((val, key) => {
+        headersObj[key] = val;
+      });
+      let bodyPreview: string | null = null;
+      if (request.method === "POST" || request.method === "PUT") {
+        try {
+          bodyPreview = (await request.text()).slice(0, 4096);
+        } catch {
+          // ignore
+        }
+      }
+      return Response.json(
+        {
+          method: request.method,
+          url: request.url,
+          pathname,
+          headers: headersObj,
+          body: bodyPreview,
+          clientIp: request.headers.get("cf-connecting-ip") || "127.0.0.1",
+          cf: (request as any).cf || {},
+        },
+        {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
+
+    // --- Model Context Protocol (MCP) Server Endpoint ---
+    if (pathname === "/mcp" || pathname === "/mcp/") {
+      return handleMcpRequest(request);
+    }
+
     if (pathname === "/proxy") {
       return proxy(request, env);
     }
@@ -414,6 +486,28 @@ export default {
 
     // --- Phase 5: Stateless Inspector Tools ---
     if (pathname.startsWith("/api/tools/")) {
+      if (pathname === "/api/tools/batch") {
+        if (request.method !== "POST") {
+          return new Response("Method not allowed. Use POST with JSON body: { urls: [...] }", {
+            status: 405,
+            headers: { Allow: "POST", "Content-Type": "text/plain; charset=utf-8" },
+          });
+        }
+        try {
+          const body = (await request.json()) as any;
+          const urls = Array.isArray(body?.urls) ? body.urls : [];
+          const result = await executeBatch(urls);
+          return Response.json(result, {
+            headers: { "Access-Control-Allow-Origin": "*" },
+          });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : "Batch execution error." },
+            { status: 400 }
+          );
+        }
+      }
+
       const target = url.searchParams.get("url") || url.searchParams.get("domain");
       if (!target) {
         return Response.json({ ok: false, error: "Missing required 'url' or 'domain' parameter." }, { status: 400 });
@@ -425,6 +519,10 @@ export default {
             return Response.json(await lookupDns(target));
           case "/api/tools/tls":
             return Response.json(await inspectTls(target));
+          case "/api/tools/cert":
+            return Response.json(await lookupCert(target));
+          case "/api/tools/archive":
+            return Response.json(await lookupArchive(target));
           case "/api/tools/headers":
             return Response.json(await inspectHeaders(target));
           case "/api/tools/security-headers":
@@ -535,12 +633,14 @@ export default {
           docs: `${url.origin}/api`,
           openapi: `${url.origin}/openapi.json`,
           endpoints: {
-            core: ["/health", "/proxy?url=https://example.com", "/cors?url=https://example.com", "/r/https://example.com", "/docs", "/openapi.json"],
+            core: ["/health", "/ip", "/echo", "/mcp", "/proxy?url=https://example.com", "/cors?url=https://example.com", "/r/https://example.com", "/docs", "/openapi.json"],
             diagnostics: ["/diagnostics?url=https://example.com"],
             inspectorTools: [
               "/api/tools/dns?domain=example.com",
               "/api/tools/whois?domain=example.com",
               "/api/tools/tls?url=https://example.com",
+              "/api/tools/cert?domain=example.com",
+              "/api/tools/archive?url=https://example.com",
               "/api/tools/security-headers?url=https://example.com",
               "/api/tools/headers?url=https://example.com",
               "/api/tools/redirects?url=https://example.com",
@@ -553,6 +653,7 @@ export default {
               "/api/tools/markdown?url=https://example.com",
               "/api/tools/metadata?url=https://example.com",
               "/api/tools/response-info?url=https://example.com",
+              "/api/tools/batch (POST { urls: ['https://example.com'] })",
             ],
             browserTools: [
               "/api/browser/info",

@@ -483,6 +483,101 @@ export const openApiSpec = {
         },
       },
     },
+    "/ip": {
+      get: {
+        summary: "Edge Client IP & Datacenter Inspector",
+        description: "Returns client public IP, Cloudflare edge Colo/datacenter code, ASN, country, and TLS cipher suite directly from Cloudflare edge context.",
+        responses: {
+          "200": { description: "Client edge diagnostics JSON" },
+        },
+      },
+    },
+    "/echo": {
+      get: {
+        summary: "Developer Request & Header Echo",
+        description: "Echoes client request headers, HTTP method, client IP, and Cloudflare context back as JSON (like httpbin.org).",
+        responses: {
+          "200": { description: "Request echo details JSON" },
+        },
+      },
+    },
+    "/mcp": {
+      get: {
+        summary: "Model Context Protocol (MCP) Server Info",
+        description: "Describes RouteX's MCP server capabilities, protocol version, and tool catalog for AI assistants (Cursor, Claude, Antigravity).",
+        responses: {
+          "200": { description: "MCP server capabilities and tools" },
+        },
+      },
+      post: {
+        summary: "MCP JSON-RPC 2.0 Handler",
+        description: "Executes standard MCP JSON-RPC 2.0 methods: initialize, tools/list, and tools/call.",
+        responses: {
+          "200": { description: "JSON-RPC 2.0 response" },
+        },
+      },
+    },
+    "/api/tools/cert": {
+      get: {
+        summary: "SSL Certificate Transparency & Expiry",
+        description: "Queries public crt.sh Certificate Transparency logs to evaluate SSL certificates, issuer, validity window, and days until expiration.",
+        parameters: [
+          {
+            name: "domain",
+            in: "query",
+            required: true,
+            schema: { type: "string", example: "cloudflare.com" },
+          },
+        ],
+        responses: {
+          "200": { description: "Certificate transparency audit JSON" },
+        },
+      },
+    },
+    "/api/tools/archive": {
+      get: {
+        summary: "Wayback Machine Web Archive Availability",
+        description: "Queries the official archive.org Wayback Machine availability API for historical snapshots of any public URL.",
+        parameters: [
+          {
+            name: "url",
+            in: "query",
+            required: true,
+            schema: { type: "string", example: "https://example.com" },
+          },
+        ],
+        responses: {
+          "200": { description: "Wayback Machine snapshot status JSON" },
+        },
+      },
+    },
+    "/api/tools/batch": {
+      post: {
+        summary: "Batch URL Multi-Probe",
+        description: "Executes parallel HTTP HEAD probes for up to 5 URLs concurrently, returning status codes, latency, and content types.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["urls"],
+                properties: {
+                  urls: {
+                    type: "array",
+                    items: { type: "string" },
+                    example: ["https://example.com", "https://cloudflare.com"],
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Batch probe execution summary JSON" },
+        },
+      },
+    },
     "/openapi.json": {
       get: {
         summary: "OpenAPI 3.1 Specification JSON",

@@ -1,5 +1,5 @@
 > [!NOTE]
-> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 14 stateless inspector tools, multi-probe compatibility diagnostics, OpenAPI 3.1 specification, and optional Daytona compute integration.
+> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, Model Context Protocol (MCP) server, 18 stateless inspector tools, multi-probe compatibility diagnostics, OpenAPI 3.1 specification, and optional Daytona compute integration.
 
 <div align="center">
 
@@ -15,7 +15,7 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 [![Cloudflare Workers](https://img.shields.io/badge/Platform-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#zero-application-persistence)
-[![Tests Passing](https://img.shields.io/badge/Tests-156%2F156%20Passing-brightgreen.svg)](#automated-testing)
+[![Tests Passing](https://img.shields.io/badge/Tests-166%2F166%20Passing-brightgreen.svg)](#automated-testing)
 [![SSRF Protected](https://img.shields.io/badge/Security-Multi--Layer%20SSRF%20Defense-red.svg)](#security-model--ssrf-defense)
 [![Daytona Compatible](https://img.shields.io/badge/Compute-Daytona%20Sandboxes-blueviolet.svg)](#daytona-integration)
 
@@ -343,12 +343,14 @@ Requests to any of the following are terminated at the edge with `400 Bad Reques
 
 ## Stateless Inspector Tools
 
-RouteX includes 14 independent inspection tools accessible via REST endpoints:
+RouteX includes 18 independent inspection tools accessible via REST endpoints:
 
 | Endpoint | Tool Name | Description |
 | :--- | :--- | :--- |
 | `GET /api/tools/dns?domain=...` | **DNS-over-HTTPS Lookup** | Queries Cloudflare 1.1.1.1 for A, AAAA, MX, TXT, NS, and CNAME records. |
 | `GET /api/tools/tls?url=...` | **SSL/TLS Security Audit** | Evaluates TLS configuration, HSTS header presence, max-age grade, and HTTPS compliance. |
+| `GET /api/tools/cert?domain=...` | **SSL Cert Transparency** | Queries public `crt.sh` logs for certificate issuer, validity window, and days until expiration. |
+| `GET /api/tools/archive?url=...` | **Wayback Machine Checker** | Queries official `archive.org` availability API for historical snapshots of any public URL. |
 | `GET /api/tools/headers?url=...` | **HTTP Header Inspector** | Returns raw upstream HTTP response headers and status codes. |
 | `GET /api/tools/security-headers?url=...` | **Security Header Checker** | Objective assessment of HSTS, CSP, X-Frame-Options, Referrer-Policy, and Permissions-Policy. |
 | `GET /api/tools/redirects?url=...` | **Redirect Tracer** | Traces up to 10 HTTP redirect hops with status codes and location targets. |
@@ -361,7 +363,11 @@ RouteX includes 14 independent inspection tools accessible via REST endpoints:
 | `GET /api/tools/metadata?url=...` | **Open Graph & SEO Metadata** | Extracts Open Graph (`og:*`), Twitter Cards, canonical tags, favicons, and JSON-LD structured data. |
 | `GET /api/tools/whois?domain=...` | **Domain & RDAP Whois** | Queries ICANN RDAP for domain registrar, statuses, nameservers, and registration events. |
 | `GET /api/tools/feed?url=...` | **RSS & Atom Feed Parser** | Parses syndicated RSS 2.0 / Atom XML feeds into structured JSON objects. |
+| `POST /api/tools/batch` | **Batch URL Multi-Probe** | Concurrently probes up to 5 URLs in parallel returning status, content-type, and latency. |
 | `GET /api/tools/response-info?url=...` | **Response Info** | Analyzes response size, content type, transfer encoding, and HTTP status. |
+| `GET /ip` | **Edge Client IP & Datacenter** | Returns client IP, Cloudflare edge Colo code, ASN, country, and TLS cipher suite. |
+| `GET /echo` | **Developer Request Echo** | Echoes client request headers, HTTP method, client IP, and Cloudflare context. |
+| `GET /mcp` & `POST /mcp` | **Model Context Protocol (MCP)** | JSON-RPC 2.0 endpoint for AI assistants (Cursor, Claude Desktop, Antigravity). |
 | `GET /r/:url` or `GET /r?url=...` | **Direct Markdown Reader** | Fetches and returns raw `text/markdown` directly without wrapper, designed for `curl` and LLMs. |
 | `GET /docs` | **Scalar API Reference** | Modern interactive API documentation powered by Scalar and OpenAPI 3.1. |
 | `GET /openapi.json` | **OpenAPI 3.1 Spec** | Formal schema definition for Swagger UI, Postman, and MCP integrations. |
@@ -393,7 +399,7 @@ Do not claim that "nothing anywhere is stored." Cloudflare as the underlying edg
 
 ## Automated Testing
 
-RouteX is backed by an automated 156-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
+RouteX is backed by an automated 166-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
 
 ```bash
 npm test
@@ -567,12 +573,22 @@ npm test
   [PASS] Whois Tool: SSRF loopback target rejected with 400 Bad Request
   [PASS] Whois Tool: Returns structured domain details
   [PASS] Feed Parser: Returns structured feed analysis object
+  [PASS] Edge Client IP (/ip): Returns client IP and Cloudflare edge metadata
+  [PASS] Request Echo (/echo): Echoes client headers and request details
+  [PASS] MCP Server (GET /mcp): Returns MCP capabilities and tools spec
+  [PASS] MCP Server (initialize): Responds with JSON-RPC 2.0 handshake
+  [PASS] MCP Server (tools/list): Returns tool declarations for LLM agents
+  [PASS] MCP Server (tools/call): Executes tool and returns content array
+  [PASS] Cert Tool: SSRF loopback target rejected with 400 Bad Request
+  [PASS] Archive Tool: SSRF cloud metadata target rejected with 400 Bad Request
+  [PASS] Batch Tool: GET method rejected with 405 Method Not Allowed
+  [PASS] Batch Tool: Executes parallel probes and returns summary
 
 ==================================================
   TEST SUMMARY
 ==================================================
-  TOTAL:  156 tests
-  PASSED: 156
+  TOTAL:  166 tests
+  PASSED: 166
   FAILED: 0
 
 All automated tests passed successfully!

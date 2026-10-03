@@ -82,6 +82,9 @@
               <select id="runnerEndpointSelect">
                 <optgroup label="Core Gateway">
                   <option value="/health" data-method="GET">GET /health</option>
+                  <option value="/ip" data-method="GET">GET /ip (Edge Client & Datacenter)</option>
+                  <option value="/echo" data-method="GET">GET /echo (Request Echo)</option>
+                  <option value="/mcp" data-method="GET">GET /mcp (Model Context Protocol)</option>
                   <option value="/proxy" data-method="GET" data-param="url">GET /proxy?url={url}</option>
                   <option value="/cors" data-method="GET" data-param="url">GET /cors?url={url}</option>
                   <option value="/r" data-method="GET" data-param="url">GET /r?url={url} (Raw Markdown)</option>
@@ -94,6 +97,8 @@
                 <optgroup label="Stateless Inspector Tools">
                   <option value="/api/tools/dns" data-method="GET" data-param="url">GET /api/tools/dns?domain={domain}</option>
                   <option value="/api/tools/whois" data-method="GET" data-param="url">GET /api/tools/whois?domain={domain}</option>
+                  <option value="/api/tools/cert" data-method="GET" data-param="url">GET /api/tools/cert?domain={domain}</option>
+                  <option value="/api/tools/archive" data-method="GET" data-param="url">GET /api/tools/archive?url={url}</option>
                   <option value="/api/tools/tls" data-method="GET" data-param="url">GET /api/tools/tls?url={url}</option>
                   <option value="/api/tools/security-headers" data-method="GET" data-param="url" selected>GET /api/tools/security-headers?url={url}</option>
                   <option value="/api/tools/headers" data-method="GET" data-param="url">GET /api/tools/headers?url={url}</option>
@@ -198,6 +203,54 @@
               <button type="button" class="btn-ghost try-btn" data-endpoint="/proxy" data-method="GET" data-url="https://example.com">Try in Console</button>
               <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/proxy?url=https://example.com" data-method="GET">Copy cURL</button>
               <a href="/proxy?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/ip</span>
+              </div>
+              <span class="badge-tag">Edge Client</span>
+            </div>
+            <div class="api-card-desc">Returns client public IP, Cloudflare edge Colo/datacenter code, ASN, country, and TLS cipher suite directly from edge context.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/ip" data-method="GET">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/ip" data-method="GET">Copy cURL</button>
+              <a href="/ip" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/echo</span>
+              </div>
+              <span class="badge-tag">Debugger</span>
+            </div>
+            <div class="api-card-desc">Echoes incoming request headers, HTTP method, client IP, and Cloudflare context back as JSON (like httpbin.org).</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/echo" data-method="GET">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/echo" data-method="GET">Copy cURL</button>
+              <a href="/echo" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag post">POST</span>
+                <span class="endpoint-path">/mcp</span>
+              </div>
+              <span class="badge-tag">AI Protocol</span>
+            </div>
+            <div class="api-card-desc">Stateless Model Context Protocol (MCP) JSON-RPC 2.0 server allowing AI assistants (Cursor, Claude, Antigravity) to call RouteX tools.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/mcp" data-method="GET">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/mcp" data-method="GET">Copy cURL</button>
+              <a href="/mcp" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
             </div>
           </div>
 
@@ -449,6 +502,52 @@
               <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/response-info" data-method="GET" data-url="https://example.com">Try in Console</button>
               <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/response-info?url=https://example.com" data-method="GET">Copy cURL</button>
               <a href="/api/tools/response-info?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/cert?domain={domain}</span>
+              </div>
+              <span class="badge-tag">Cert Transparency</span>
+            </div>
+            <div class="api-card-desc">Queries public crt.sh logs to inspect active SSL certificates, issuer names, validity windows, and days remaining until expiration.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/cert" data-method="GET" data-url="cloudflare.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/cert?domain=cloudflare.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/cert?domain=cloudflare.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/archive?url={url}</span>
+              </div>
+              <span class="badge-tag">Wayback Machine</span>
+            </div>
+            <div class="api-card-desc">Queries official archive.org Wayback Machine API to find closest historical snapshots and timestamps for any public URL.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/archive" data-method="GET" data-url="https://example.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/archive?url=https://example.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/archive?url=https://example.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag post">POST</span>
+                <span class="endpoint-path">/api/tools/batch</span>
+              </div>
+              <span class="badge-tag">Multi-Probe</span>
+            </div>
+            <div class="api-card-desc">Probes up to 5 URLs in parallel via HTTP HEAD requests, returning status codes, content types, and round-trip latency.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost copy-curl-btn" data-curl='curl -X POST "https://routex-web-gateway.apkscope.workers.dev/api/tools/batch" -H "Content-Type: application/json" -d "{\"urls\":[\"https://example.com\",\"https://cloudflare.com\"]}"'>Copy cURL</button>
             </div>
           </div>
 

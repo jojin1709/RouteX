@@ -657,6 +657,86 @@ async function runAllTests() {
   const feedData = (await feedRes.json()) as any;
   test("Feed Parser: Returns structured feed analysis object", feedRes.status === 200 && Boolean(feedData.channel !== undefined) && Array.isArray(feedData.items));
 
+  // 8.13 Edge Client IP & Datacenter Inspector (/ip)
+  const ipReq = new Request("https://gateway/ip", {
+    method: "GET",
+    headers: { "cf-connecting-ip": "203.0.113.195" },
+  });
+  const ipRes = await worker.fetch(ipReq, regressionEnv);
+  const ipData = (await ipRes.json()) as any;
+  test("Edge Client IP (/ip): Returns client IP and Cloudflare edge metadata", ipRes.status === 200 && ipData.ip === "203.0.113.195" && typeof ipData.colo === "string");
+
+  // 8.14 Developer Request Echo (/echo)
+  const echoReq = new Request("https://gateway/echo", {
+    method: "GET",
+    headers: { "X-Custom-Echo-Header": "RouteX-Echo-Test" },
+  });
+  const echoRes = await worker.fetch(echoReq, regressionEnv);
+  const echoData = (await echoRes.json()) as any;
+  test("Request Echo (/echo): Echoes client headers and request details", echoRes.status === 200 && echoData.method === "GET" && echoData.headers["x-custom-echo-header"] === "RouteX-Echo-Test");
+
+  // 8.15 Model Context Protocol Server (/mcp)
+  const mcpGetReq = new Request("https://gateway/mcp", { method: "GET" });
+  const mcpGetRes = await worker.fetch(mcpGetReq, regressionEnv);
+  const mcpGetData = (await mcpGetRes.json()) as any;
+  test("MCP Server (GET /mcp): Returns MCP capabilities and tools spec", mcpGetRes.status === 200 && mcpGetData.protocolVersion === "2024-11-05" && Array.isArray(mcpGetData.tools));
+
+  const mcpInitReq = new Request("https://gateway/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+  });
+  const mcpInitRes = await worker.fetch(mcpInitReq, regressionEnv);
+  const mcpInitData = (await mcpInitRes.json()) as any;
+  test("MCP Server (initialize): Responds with JSON-RPC 2.0 handshake", mcpInitRes.status === 200 && mcpInitData.result?.protocolVersion === "2024-11-05");
+
+  const mcpListReq = new Request("https://gateway/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+  });
+  const mcpListRes = await worker.fetch(mcpListReq, regressionEnv);
+  const mcpListData = (await mcpListRes.json()) as any;
+  test("MCP Server (tools/list): Returns tool declarations for LLM agents", mcpListRes.status === 200 && Array.isArray(mcpListData.result?.tools) && mcpListData.result.tools.length >= 6);
+
+  const mcpCallReq = new Request("https://gateway/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "routex_dns_lookup", arguments: { domain: "example.com" } },
+    }),
+  });
+  const mcpCallRes = await worker.fetch(mcpCallReq, regressionEnv);
+  const mcpCallData = (await mcpCallRes.json()) as any;
+  test("MCP Server (tools/call): Executes tool and returns content array", mcpCallRes.status === 200 && Array.isArray(mcpCallData.result?.content) && mcpCallData.result.content[0].type === "text");
+
+  // 8.16 SSL Certificate Transparency Tool (/api/tools/cert)
+  const certLoopbackReq = new Request("https://gateway/api/tools/cert?domain=127.0.0.1", { method: "GET" });
+  const certLoopbackRes = await worker.fetch(certLoopbackReq, regressionEnv);
+  test("Cert Tool: SSRF loopback target rejected with 400 Bad Request", certLoopbackRes.status === 400);
+
+  // 8.17 Wayback Machine Archive Tool (/api/tools/archive)
+  const archiveLoopbackReq = new Request("https://gateway/api/tools/archive?url=http%3A%2F%2F169.254.169.254", { method: "GET" });
+  const archiveLoopbackRes = await worker.fetch(archiveLoopbackReq, regressionEnv);
+  test("Archive Tool: SSRF cloud metadata target rejected with 400 Bad Request", archiveLoopbackRes.status === 400);
+
+  // 8.18 Batch URL Multi-Probe (/api/tools/batch)
+  const batchInvalidReq = new Request("https://gateway/api/tools/batch", { method: "GET" });
+  const batchInvalidRes = await worker.fetch(batchInvalidReq, regressionEnv);
+  test("Batch Tool: GET method rejected with 405 Method Not Allowed", batchInvalidRes.status === 405);
+
+  const batchValidReq = new Request("https://gateway/api/tools/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ urls: ["https://example.com"] }),
+  });
+  const batchValidRes = await worker.fetch(batchValidReq, regressionEnv);
+  const batchValidData = (await batchValidRes.json()) as any;
+  test("Batch Tool: Executes parallel probes and returns summary", batchValidRes.status === 200 && batchValidData.total === 1 && Array.isArray(batchValidData.probes));
+
   // ----------------------------------------------------
   // TEST SUMMARY
   // ----------------------------------------------------

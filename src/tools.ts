@@ -928,4 +928,242 @@ export async function parseFeed(rawUrl: string): Promise<Record<string, unknown>
   };
 }
 
+/**
+ * 16. SSL Certificate Transparency & Expiry Lookup (via crt.sh)
+ */
+export async function lookupCert(domainInput: string): Promise<Record<string, unknown>> {
+  let hostname = domainInput.trim();
+  try {
+    if (hostname.startsWith("http://") || hostname.startsWith("https://")) {
+      hostname = new URL(hostname).hostname;
+    } else if (hostname.includes("/")) {
+      hostname = hostname.split("/")[0];
+    }
+  } catch {
+    // Keep trimmed
+  }
+
+  // Validate hostname against SSRF
+  const target = normalizeTarget(`https://${hostname}`);
+  const validatedHost = target.hostname;
+
+  const start = Date.now();
+  const crtUrl = `https://crt.sh/?q=${encodeURIComponent(validatedHost)}&output=json`;
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+  try {
+    const res = await fetch(crtUrl, {
+      headers: { "User-Agent": TOOL_USER_AGENT, "Accept": "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return {
+        domain: validatedHost,
+        found: false,
+        status: res.status,
+        latencyMs: Date.now() - start,
+        error: `Certificate Transparency service returned HTTP ${res.status}`,
+      };
+    }
+
+    const data = (await res.json()) as Array<{
+      issuer_name?: string;
+      common_name?: string;
+      name_value?: string;
+      not_before?: string;
+      not_after?: string;
+      serial_number?: string;
+    }>;
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return {
+        domain: validatedHost,
+        found: false,
+        latencyMs: Date.now() - start,
+        certificates: [],
+      };
+    }
+
+    const now = new Date();
+    // Sort by latest not_after date
+    const sorted = [...data].sort((a, b) => {
+      const timeA = a.not_after ? new Date(a.not_after).getTime() : 0;
+      const timeB = b.not_after ? new Date(b.not_after).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    const activeCerts: Array<Record<string, unknown>> = [];
+    const seenSerials = new Set<string>();
+
+    for (const cert of sorted) {
+      if (activeCerts.length >= 10) break;
+      const serial = cert.serial_number || cert.common_name || "";
+      if (seenSerials.has(serial)) continue;
+      seenSerials.add(serial);
+
+      const notAfterDate = cert.not_after ? new Date(cert.not_after) : null;
+      const notBeforeDate = cert.not_before ? new Date(cert.not_before) : null;
+      const isExpired = notAfterDate ? notAfterDate < now : false;
+      const daysRemaining = notAfterDate ? Math.round((notAfterDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+      activeCerts.push({
+        commonName: cert.common_name || validatedHost,
+        issuer: cert.issuer_name || "Unknown",
+        notBefore: cert.not_before || "",
+        notAfter: cert.not_after || "",
+        isExpired,
+        daysRemaining,
+      });
+    }
+
+    return {
+      domain: validatedHost,
+      found: true,
+      latencyMs: Date.now() - start,
+      totalRecords: data.length,
+      latestCertificate: activeCerts[0] || null,
+      certificates: activeCerts,
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    return {
+      domain: validatedHost,
+      found: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : "Certificate transparency lookup failed",
+    };
+  }
+}
+
+/**
+ * 17. Wayback Machine Web Archive Checker (via archive.org)
+ */
+export async function lookupArchive(rawUrl: string): Promise<Record<string, unknown>> {
+  const target = normalizeTarget(rawUrl);
+  const start = Date.now();
+  const archiveApi = `https://archive.org/wayback/available?url=${encodeURIComponent(target.toString())}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+  try {
+    const res = await fetch(archiveApi, {
+      headers: { "User-Agent": TOOL_USER_AGENT, "Accept": "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return {
+        target: target.toString(),
+        available: false,
+        latencyMs: Date.now() - start,
+        error: `Wayback Machine API responded with HTTP ${res.status}`,
+      };
+    }
+
+    const data = (await res.json()) as {
+      archived_snapshots?: {
+        closest?: {
+          status?: string;
+          available?: boolean;
+          url?: string;
+          timestamp?: string;
+        };
+      };
+    };
+
+    const closest = data.archived_snapshots?.closest;
+    const isAvailable = Boolean(closest?.available);
+
+    return {
+      target: target.toString(),
+      available: isAvailable,
+      latencyMs: Date.now() - start,
+      snapshotUrl: isAvailable ? closest?.url : null,
+      timestamp: isAvailable ? closest?.timestamp : null,
+      status: closest?.status || null,
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    return {
+      target: target.toString(),
+      available: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : "Archive lookup failed",
+    };
+  }
+}
+
+/**
+ * 18. Batch URL Gateway Probe
+ */
+export async function executeBatch(rawUrls: string[]): Promise<Record<string, unknown>> {
+  if (!Array.isArray(rawUrls) || rawUrls.length === 0) {
+    throw new Error("Missing or empty 'urls' array in request body.");
+  }
+
+  // Max 5 URLs per batch to strictly adhere to free-tier subrequest limits
+  const urlsToProbe = rawUrls.slice(0, 5);
+
+  const results = await Promise.allSettled(
+    urlsToProbe.map(async (u) => {
+      const start = Date.now();
+      try {
+        const target = normalizeTarget(u);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const res = await fetch(target.toString(), {
+          method: "HEAD",
+          headers: { "User-Agent": TOOL_USER_AGENT },
+          signal: controller.signal,
+          redirect: "follow",
+        });
+        clearTimeout(timeoutId);
+
+        return {
+          url: target.toString(),
+          ok: res.ok,
+          status: res.status,
+          contentType: res.headers.get("content-type") || "unknown",
+          latencyMs: Date.now() - start,
+        };
+      } catch (err) {
+        return {
+          url: u,
+          ok: false,
+          status: 0,
+          error: err instanceof Error ? err.message : "Probe failed",
+          latencyMs: Date.now() - start,
+        };
+      }
+    })
+  );
+
+  const probes = results.map((r, i) => {
+    if (r.status === "fulfilled") {
+      return r.value;
+    }
+    return {
+      url: urlsToProbe[i],
+      ok: false,
+      status: 0,
+      error: "Unexpected execution failure",
+      latencyMs: 0,
+    };
+  });
+
+  return {
+    total: probes.length,
+    successful: probes.filter((p) => p.ok).length,
+    probes,
+  };
+}
+
+
 
