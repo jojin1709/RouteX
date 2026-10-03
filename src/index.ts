@@ -21,6 +21,8 @@ import { MAX_HTML_SIZE_BYTES, normalizeTarget } from "./security.ts";
 import {
   checkSecurityHeaders,
   extractLinks,
+  extractMarkdown,
+  extractMetadata,
   formatJson,
   inspectHeaders,
   inspectTls,
@@ -31,6 +33,7 @@ import {
   viewRobots,
   viewXml,
 } from "./tools.ts";
+import { openApiSpec } from "./openapi.ts";
 import { verifyTurnstileToken } from "./turnstile.ts";
 import type { Env } from "./types.ts";
 
@@ -192,11 +195,28 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
   }
 
   const rawContentType = (upstream.headers.get("content-type") || "").toLowerCase();
+  const isDownload = incoming.searchParams.get("download") === "1" || incoming.searchParams.get("download") === "true";
+
+  function applyDownload(h: Headers): Headers {
+    if (isDownload) {
+      const pathParts = target.pathname.split("/").filter(Boolean);
+      const last = pathParts[pathParts.length - 1];
+      let filename = "download";
+      if (last && last.includes(".")) {
+        filename = last.replace(/[^a-zA-Z0-9._-]/g, "_");
+      } else {
+        filename = `${target.hostname.replace(/[^a-zA-Z0-9.-]/g, "_")}.html`;
+      }
+      h.set("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+    return h;
+  }
 
   // 7. Raw Passthrough Mode: bypass rewriting if ?raw=true or ?raw=1
   const isRaw = incoming.searchParams.get("raw") === "true" || incoming.searchParams.get("raw") === "1";
   if (isRaw) {
     const outHeaders = buildResponseHeaders(upstream, false);
+    applyDownload(outHeaders);
     outHeaders.set("X-RouteX-Mode", "raw-passthrough");
     if (safeStatus !== upstream.status) {
       outHeaders.set("X-Upstream-Status", String(upstream.status));
@@ -215,6 +235,7 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     // If document exceeds max processing size, stream directly to prevent worker memory exhaustion
     if (contentLength > MAX_HTML_SIZE_BYTES) {
       const outHeaders = buildResponseHeaders(upstream, false);
+      applyDownload(outHeaders);
       if (safeStatus !== upstream.status) {
         outHeaders.set("X-Upstream-Status", String(upstream.status));
       }
@@ -228,6 +249,7 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     const htmlText = await upstream.text();
     const rewrittenHtml = rewriteHtml(htmlText, target);
     const outHeaders = buildResponseHeaders(upstream, true);
+    applyDownload(outHeaders);
     outHeaders.set("Content-Type", "text/html; charset=utf-8");
     outHeaders.set("Set-Cookie", `__routex_target=${encodeURIComponent(target.origin)}; Path=/; SameSite=Lax`);
     if (safeStatus !== upstream.status) {
@@ -247,6 +269,7 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
 
     if (contentLength > MAX_HTML_SIZE_BYTES) {
       const outHeaders = buildResponseHeaders(upstream, false);
+      applyDownload(outHeaders);
       if (safeStatus !== upstream.status) {
         outHeaders.set("X-Upstream-Status", String(upstream.status));
       }
@@ -260,6 +283,7 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
     const cssText = await upstream.text();
     const rewrittenCss = rewriteCss(cssText, target);
     const outHeaders = buildResponseHeaders(upstream, true);
+    applyDownload(outHeaders);
     outHeaders.set("Content-Type", "text/css; charset=utf-8");
     if (safeStatus !== upstream.status) {
       outHeaders.set("X-Upstream-Status", String(upstream.status));
@@ -274,6 +298,7 @@ async function proxy(request: Request, _env: Env): Promise<Response> {
 
   // 9. Binary, JavaScript, fonts, media, PDF, and JSON: direct passthrough stream
   const outHeaders = buildResponseHeaders(upstream, false);
+  applyDownload(outHeaders);
   if (safeStatus !== upstream.status) {
     outHeaders.set("X-Upstream-Status", String(upstream.status));
   }
@@ -363,6 +388,11 @@ export default {
             return Response.json(await formatJson(target));
           case "/api/tools/xml":
             return Response.json(await viewXml(target));
+          case "/api/tools/markdown":
+            return Response.json(await extractMarkdown(target));
+          case "/api/tools/metadata":
+          case "/api/tools/meta":
+            return Response.json(await extractMetadata(target));
           case "/api/tools/response-info":
             return Response.json(await responseInfo(target));
           default:
@@ -377,6 +407,13 @@ export default {
     }
 
     // --- Phase 3: Turnstile Verification Endpoint ---
+    if (pathname === "/api/turnstile/config") {
+      return Response.json({
+        enabled: Boolean(env.TURNSTILE_SECRET_KEY && env.TURNSTILE_SITE_KEY),
+        siteKey: env.TURNSTILE_SITE_KEY || null,
+      });
+    }
+
     if (pathname === "/api/turnstile/verify") {
       if (request.method !== "POST" && request.method !== "GET") {
         return new Response("Method not allowed. Use GET or POST.", { status: 405 });
@@ -409,6 +446,16 @@ export default {
       }
     }
 
+    // --- OpenAPI 3.1 Specification JSON ---
+    if (pathname === "/openapi.json" || pathname === "/api/openapi.json") {
+      return Response.json(openApiSpec, {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
     // --- API Directory & Interactive Reference ---
     if (pathname === "/api" || pathname === "/api/" || pathname === "/api.json" || pathname === "/api/endpoints") {
       const accept = request.headers.get("accept") || "";
@@ -425,12 +472,13 @@ export default {
       return Response.json(
         {
           service: "RouteX Web Gateway",
-          version: "2.0.0",
+          version: "2.1.0",
           stateless: true,
           storage: "none",
           docs: `${url.origin}/api`,
+          openapi: `${url.origin}/openapi.json`,
           endpoints: {
-            core: ["/health", "/proxy?url=https://example.com"],
+            core: ["/health", "/proxy?url=https://example.com", "/openapi.json"],
             diagnostics: ["/diagnostics?url=https://example.com"],
             inspectorTools: [
               "/api/tools/dns?domain=example.com",
@@ -443,6 +491,8 @@ export default {
               "/api/tools/sitemap?url=https://example.com",
               "/api/tools/json?url=https://httpbin.org/json",
               "/api/tools/xml?url=https://httpbin.org/xml",
+              "/api/tools/markdown?url=https://example.com",
+              "/api/tools/metadata?url=https://example.com",
               "/api/tools/response-info?url=https://example.com",
             ],
             browserTools: [
@@ -469,6 +519,15 @@ export default {
       );
     }
 
+    if (pathname === "/cors") {
+      const proxiedUrl = new URL(request.url);
+      proxiedUrl.pathname = "/proxy";
+      if (!proxiedUrl.searchParams.has("raw")) {
+        proxiedUrl.searchParams.set("raw", "true");
+      }
+      return proxy(new Request(proxiedUrl.toString(), request), env);
+    }
+
     // --- Static Frontend Assets in public/ ---
     if (
       pathname === "/" ||
@@ -476,7 +535,9 @@ export default {
       pathname === "/api.html" ||
       pathname === "/styles.css" ||
       pathname === "/app.js" ||
-      pathname === "/favicon.ico"
+      pathname === "/favicon.ico" ||
+      pathname === "/favicon.svg" ||
+      pathname === "/robots.txt"
     ) {
       if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
         return env.ASSETS.fetch(request);

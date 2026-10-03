@@ -1,5 +1,5 @@
 > [!NOTE]
-> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 9 stateless inspector tools, multi-probe compatibility diagnostics, and optional Daytona compute integration.
+> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 12 stateless inspector tools, multi-probe compatibility diagnostics, OpenAPI 3.1 specification, and optional Daytona compute integration.
 
 <div align="center">
 
@@ -15,7 +15,7 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 [![Cloudflare Workers](https://img.shields.io/badge/Platform-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#zero-application-persistence)
-[![Tests Passing](https://img.shields.io/badge/Tests-135%2F135%20Passing-brightgreen.svg)](#automated-testing)
+[![Tests Passing](https://img.shields.io/badge/Tests-150%2F150%20Passing-brightgreen.svg)](#automated-testing)
 [![SSRF Protected](https://img.shields.io/badge/Security-Multi--Layer%20SSRF%20Defense-red.svg)](#security-model--ssrf-defense)
 [![Daytona Compatible](https://img.shields.io/badge/Compute-Daytona%20Sandboxes-blueviolet.svg)](#daytona-integration)
 
@@ -343,19 +343,24 @@ Requests to any of the following are terminated at the edge with `400 Bad Reques
 
 ## Stateless Inspector Tools
 
-RouteX includes 9 independent inspection tools accessible via REST endpoints:
+RouteX includes 12 independent inspection tools accessible via REST endpoints:
 
 | Endpoint | Tool Name | Description |
 | :--- | :--- | :--- |
+| `GET /api/tools/dns?domain=...` | **DNS-over-HTTPS Lookup** | Queries Cloudflare 1.1.1.1 for A, AAAA, MX, TXT, NS, and CNAME records. |
+| `GET /api/tools/tls?url=...` | **SSL/TLS Security Audit** | Evaluates TLS configuration, HSTS header presence, max-age grade, and HTTPS compliance. |
 | `GET /api/tools/headers?url=...` | **HTTP Header Inspector** | Returns raw upstream HTTP response headers and status codes. |
 | `GET /api/tools/security-headers?url=...` | **Security Header Checker** | Objective assessment of HSTS, CSP, X-Frame-Options, Referrer-Policy, and Permissions-Policy. |
-| `GET /api/tools/redirects?url=...` | **Redirect Tracer** | Traces up to 5 HTTP redirect hops with status codes and location targets. |
-| `GET /api/tools/links?url=...` | **Link Extractor** | Parses HTML anchor tags and returns resolved destination links. |
-| `GET /api/tools/robots?url=...` | **robots.txt Viewer** | Fetches and returns raw directives from `/robots.txt`. |
+| `GET /api/tools/redirects?url=...` | **Redirect Tracer** | Traces up to 10 HTTP redirect hops with status codes and location targets. |
+| `GET /api/tools/links?url=...` | **Link Extractor** | Parses HTML anchor tags and returns resolved internal, external, and resource links. |
+| `GET /api/tools/robots?url=...` | **robots.txt Viewer** | Fetches and returns raw directives and sitemaps from `/robots.txt`. |
 | `GET /api/tools/sitemap?url=...` | **sitemap.xml Parser** | Fetches and extracts URLs listed in `/sitemap.xml`. |
-| `GET /api/tools/json?url=...` | **JSON Formatter** | Formats and validates JSON payloads. |
+| `GET /api/tools/json?url=...` | **JSON Formatter** | Formats, validates, and pretty-prints JSON payloads. |
 | `GET /api/tools/xml?url=...` | **XML Viewer** | Inspects and validates XML feeds and documents. |
+| `GET /api/tools/markdown?url=...` | **Article & Markdown Extractor** | Strips boilerplate HTML, returning clean Markdown optimized for AI prompts and CLI usage. |
+| `GET /api/tools/metadata?url=...` | **Open Graph & SEO Metadata** | Extracts Open Graph (`og:*`), Twitter Cards, canonical tags, favicons, and JSON-LD structured data. |
 | `GET /api/tools/response-info?url=...` | **Response Info** | Analyzes response size, content type, transfer encoding, and HTTP status. |
+| `GET /openapi.json` | **OpenAPI 3.1 Spec** | Formal schema definition for Swagger UI, Postman, and MCP integrations. |
 
 ---
 
@@ -384,7 +389,7 @@ Do not claim that "nothing anywhere is stored." Cloudflare as the underlying edg
 
 ## Automated Testing
 
-RouteX is backed by an automated 106-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
+RouteX is backed by an automated 150-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
 
 ```bash
 npm test

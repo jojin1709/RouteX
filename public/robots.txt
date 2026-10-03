@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Allow: /api
+Allow: /openapi.json
+Disallow: /proxy
+Disallow: /api/tools/
+Disallow: /api/browser/
+
+Sitemap: https://routex-web-gateway.apkscope.workers.dev/api

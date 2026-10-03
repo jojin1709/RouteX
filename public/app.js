@@ -1,30 +1,29 @@
 (() => {
-  // --- 1. Tab Switching ---
+  // --- 1. Tab Switching & Deep-Linking Helper ---
   const tabButtons = document.querySelectorAll('.nav-tab');
   const tabPanels = document.querySelectorAll('.tab-panel');
+
+  function switchTab(targetTab) {
+    if (!targetTab) return;
+    let found = false;
+    tabButtons.forEach((b) => {
+      const matches = b.getAttribute('data-tab') === targetTab;
+      b.classList.toggle('active', matches);
+      b.setAttribute('aria-selected', matches ? 'true' : 'false');
+      if (matches) found = true;
+    });
+    tabPanels.forEach((p) => {
+      const matches = p.id === `panel-${targetTab}`;
+      p.classList.toggle('active', matches);
+      p.hidden = !matches;
+    });
+    return found;
+  }
 
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const targetTab = btn.getAttribute('data-tab');
-      if (!targetTab) return;
-
-      tabButtons.forEach((b) => {
-        b.classList.remove('active');
-        b.setAttribute('aria-selected', 'false');
-      });
-      tabPanels.forEach((p) => {
-        p.classList.remove('active');
-        p.hidden = true;
-      });
-
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected', 'true');
-
-      const panel = document.getElementById(`panel-${targetTab}`);
-      if (panel) {
-        panel.classList.add('active');
-        panel.hidden = false;
-      }
+      if (targetTab) switchTab(targetTab);
     });
   });
 
@@ -52,7 +51,10 @@
   const proxyError = document.getElementById('proxyError');
   const proxyRawCheck = document.getElementById('proxyRawCheck');
   const proxyMobileCheck = document.getElementById('proxyMobileCheck');
+  const proxyDownloadCheck = document.getElementById('proxyDownloadCheck');
   const copyProxyLinkBtn = document.getElementById('copyProxyLinkBtn');
+
+  let turnstileToken = null;
 
   function buildProxyUrl(rawVal) {
     const validated = sanitizeInputUrl(rawVal);
@@ -60,6 +62,8 @@
     let url = `/proxy?url=${encodeURIComponent(validated)}`;
     if (proxyRawCheck && proxyRawCheck.checked) url += '&raw=true';
     if (proxyMobileCheck && proxyMobileCheck.checked) url += '&ua=mobile';
+    if (proxyDownloadCheck && proxyDownloadCheck.checked) url += '&download=1';
+    if (turnstileToken) url += '&cf-turnstile-response=' + encodeURIComponent(turnstileToken);
     return url;
   }
 
@@ -356,4 +360,58 @@
       }, 1800);
     }
   });
+
+  // --- 6. Deep-Linking via URL Search Parameters ---
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const tabParam = searchParams.get('tab');
+    if (tabParam) {
+      switchTab(tabParam);
+    }
+
+    const urlParam = searchParams.get('url');
+    if (urlParam) {
+      if (proxyInput) proxyInput.value = urlParam;
+      const diagInp = document.getElementById('diagUrl');
+      if (diagInp) diagInp.value = urlParam;
+      if (browserInput) browserInput.value = urlParam;
+      if (inspectorInput) inspectorInput.value = urlParam;
+    }
+
+    const toolParam = searchParams.get('tool');
+    if (toolParam && inspectorToolSelect) {
+      inspectorToolSelect.value = toolParam;
+    }
+  } catch {}
+
+  // --- 7. Cloudflare Turnstile Anti-Bot Verification ---
+  const turnstileContainer = document.getElementById('proxyTurnstileContainer');
+  if (turnstileContainer) {
+    fetch('/api/turnstile/config')
+      .then((r) => r.json())
+      .then((cfg) => {
+        if (cfg && cfg.enabled && cfg.siteKey) {
+          turnstileContainer.hidden = false;
+          let attempts = 0;
+          const checkReady = setInterval(() => {
+            attempts++;
+            if (window.turnstile && typeof window.turnstile.render === 'function') {
+              clearInterval(checkReady);
+              window.turnstile.render(turnstileContainer, {
+                sitekey: cfg.siteKey,
+                callback: (tok) => {
+                  turnstileToken = tok;
+                },
+                'expired-callback': () => {
+                  turnstileToken = null;
+                },
+              });
+            } else if (attempts > 30) {
+              clearInterval(checkReady);
+            }
+          }, 250);
+        }
+      })
+      .catch(() => {});
+  }
 })();

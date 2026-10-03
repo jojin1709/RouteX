@@ -8,6 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="stylesheet" href="/styles.css">
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 </head>
 <body>
   <div class="shell">
@@ -65,8 +66,13 @@
               <input type="checkbox" id="proxyMobileCheck">
               <span>Mobile User-Agent</span>
             </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="proxyDownloadCheck">
+              <span>Force download (?download=1)</span>
+            </label>
             <button type="button" id="copyProxyLinkBtn" class="btn-secondary btn-sm" style="margin-left:auto;">Copy Proxy Link</button>
           </div>
+          <div id="proxyTurnstileContainer" class="turnstile-wrapper" style="margin-top: 12px;" hidden></div>
           <div id="proxyError" class="alert-box error" role="alert" hidden></div>
         </form>
 
@@ -236,6 +242,9 @@
                 <option value="sitemap">sitemap.xml Parser</option>
                 <option value="links">HTML Link Extractor</option>
                 <option value="json">JSON Validator</option>
+                <option value="xml">XML Viewer</option>
+                <option value="markdown">Article Text & Markdown Extractor</option>
+                <option value="metadata">Open Graph & SEO Metadata</option>
                 <option value="response-info">Response Information</option>
               </select>
             </div>
@@ -277,6 +286,7 @@
       </div>
       <div class="footer-right">
         <a href="/api" target="_blank" rel="noopener">API Catalog</a>
+        <a href="/openapi.json" target="_blank" rel="noopener">OpenAPI 3.1</a>
         <a href="https://github.com/jojin1709/RouteX" target="_blank" rel="noopener">GitHub</a>
       </div>
     </footer>

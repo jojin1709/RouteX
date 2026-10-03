@@ -42,6 +42,7 @@
             <p class="subtitle">High-performance, stateless web gateway endpoints running on Cloudflare Workers edge. Complete with SSRF filtering, asset rewriting, and security diagnostics.</p>
           </div>
           <div style="display:flex; gap:8px;">
+            <a href="/openapi.json" class="btn-ghost mono" target="_blank">OpenAPI 3.1 &rarr;</a>
             <a href="/api.json" class="btn-ghost mono" target="_blank">View Raw JSON &rarr;</a>
           </div>
         </div>
@@ -80,6 +81,7 @@
                 <optgroup label="Core Gateway">
                   <option value="/health" data-method="GET">GET /health</option>
                   <option value="/proxy" data-method="GET" data-param="url">GET /proxy?url={url}</option>
+                  <option value="/openapi.json" data-method="GET">GET /openapi.json</option>
                 </optgroup>
                 <optgroup label="Diagnostics Probes">
                   <option value="/diagnostics" data-method="GET" data-param="url">GET /diagnostics?url={url}</option>
@@ -95,6 +97,8 @@
                   <option value="/api/tools/sitemap" data-method="GET" data-param="url">GET /api/tools/sitemap?url={url}</option>
                   <option value="/api/tools/json" data-method="GET" data-param="url">GET /api/tools/json?url={url}</option>
                   <option value="/api/tools/xml" data-method="GET" data-param="url">GET /api/tools/xml?url={url}</option>
+                  <option value="/api/tools/markdown" data-method="GET" data-param="url">GET /api/tools/markdown?url={url}</option>
+                  <option value="/api/tools/metadata" data-method="GET" data-param="url">GET /api/tools/metadata?url={url}</option>
                   <option value="/api/tools/response-info" data-method="GET" data-param="url">GET /api/tools/response-info?url={url}</option>
                 </optgroup>
                 <optgroup label="Browser & Daytona Tools">
@@ -373,6 +377,54 @@
               <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/json" data-method="GET" data-url="https://httpbin.org/json">Try in Console</button>
               <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/json?url=https://httpbin.org/json" data-method="GET">Copy cURL</button>
               <a href="/api/tools/json?url=https://httpbin.org/json" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/xml?url={url}</span>
+              </div>
+              <span class="badge-tag">XML</span>
+            </div>
+            <div class="api-card-desc">Parses and inspects raw XML documents, detecting the root tag element, encoding, and markup structure.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/xml" data-method="GET" data-url="https://httpbin.org/xml">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/xml?url=https://httpbin.org/xml" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/xml?url=https://httpbin.org/xml" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/markdown?url={url}</span>
+              </div>
+              <span class="badge-tag">AI & Text</span>
+            </div>
+            <div class="api-card-desc">Strips HTML boilerplate, navigation bars, scripts, and CSS, returning clean, readable Markdown text optimized for AI/LLM prompts and terminal reading.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/markdown" data-method="GET" data-url="https://en.wikipedia.org/wiki/Cloudflare">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/markdown?url=https://en.wikipedia.org/wiki/Cloudflare" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/markdown?url=https://en.wikipedia.org/wiki/Cloudflare" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
+            </div>
+          </div>
+
+          <div class="api-endpoint-card">
+            <div class="api-card-header">
+              <div class="api-card-route">
+                <span class="method-tag get">GET</span>
+                <span class="endpoint-path">/api/tools/metadata?url={url}</span>
+              </div>
+              <span class="badge-tag">Open Graph</span>
+            </div>
+            <div class="api-card-desc">Extracts Open Graph tags (og:*), Twitter Cards, canonical links, favicons, meta description, and JSON-LD structured data for link previews and SEO audits.</div>
+            <div class="api-card-actions">
+              <button type="button" class="btn-ghost try-btn" data-endpoint="/api/tools/metadata" data-method="GET" data-url="https://github.com">Try in Console</button>
+              <button type="button" class="btn-ghost copy-curl-btn" data-endpoint="/api/tools/metadata?url=https://github.com" data-method="GET">Copy cURL</button>
+              <a href="/api/tools/metadata?url=https://github.com" target="_blank" class="btn-ghost">Direct Test &rarr;</a>
             </div>
           </div>
 

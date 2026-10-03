@@ -483,3 +483,257 @@ export async function inspectTls(rawUrl: string): Promise<Record<string, unknown
   };
 }
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const code = Number(dec);
+      return code >= 32 && code <= 65535 ? String.fromCharCode(code) : "";
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+      const code = parseInt(hex, 16);
+      return code >= 32 && code <= 65535 ? String.fromCharCode(code) : "";
+    });
+}
+
+/**
+ * 12. Article Text & Markdown Extractor
+ * Strips HTML boilerplate and extracts clean readable Markdown for AI/LLM prompts and CLI consumption.
+ */
+export async function extractMarkdown(rawUrl: string): Promise<Record<string, unknown>> {
+  const target = normalizeTarget(rawUrl);
+  const startTime = Date.now();
+
+  const res = await fetch(target.toString(), {
+    headers: {
+      "User-Agent": TOOL_USER_AGENT,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    redirect: "follow",
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  const rawHtml = await res.text();
+  const latencyMs = Date.now() - startTime;
+
+  // Extract metadata
+  const titleMatch = rawHtml.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : "";
+
+  const descMatch =
+    rawHtml.match(/<meta\b[^>]*\bname=["']description["'][^>]*\bcontent=["']([^"']*)["']/i) ||
+    rawHtml.match(/<meta\b[^>]*\bcontent=["']([^"']*)["'][^>]*\bname=["']description["']/i);
+  const description = descMatch ? decodeHtmlEntities(descMatch[1].trim()) : "";
+
+  const canonicalMatch =
+    rawHtml.match(/<link\b[^>]*\brel=["']canonical["'][^>]*\bhref=["']([^"']*)["']/i) ||
+    rawHtml.match(/<link\b[^>]*\bhref=["']([^"']*)["'][^>]*\brel=["']canonical["']/i);
+  const canonical = canonicalMatch ? canonicalMatch[1].trim() : "";
+
+  // Strip unneeded structural elements and scripts
+  let clean = rawHtml
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "")
+    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, "")
+    .replace(/<canvas\b[^>]*>[\s\S]*?<\/canvas>/gi, "")
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, "")
+    .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, "")
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, "")
+    .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, "");
+
+  // Convert headings
+  clean = clean.replace(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi, "\n\n# $1\n\n");
+  clean = clean.replace(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi, "\n\n## $1\n\n");
+  clean = clean.replace(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi, "\n\n### $1\n\n");
+  clean = clean.replace(/<h4\b[^>]*>([\s\S]*?)<\/h4>/gi, "\n\n#### $1\n\n");
+  clean = clean.replace(/<h5\b[^>]*>([\s\S]*?)<\/h5>/gi, "\n\n##### $1\n\n");
+  clean = clean.replace(/<h6\b[^>]*>([\s\S]*?)<\/h6>/gi, "\n\n###### $1\n\n");
+
+  // Code blocks & inline code
+  clean = clean.replace(/<pre\b[^>]*><code\b[^>]*>([\s\S]*?)<\/code><\/pre>/gi, "\n\n```\n$1\n```\n\n");
+  clean = clean.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, "\n\n```\n$1\n```\n\n");
+  clean = clean.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, "`$1`");
+
+  // Blockquotes and dividers
+  clean = clean.replace(/<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi, (_m, content) => {
+    const lines = content.trim().split("\n");
+    return "\n\n" + lines.map((l: string) => `> ${l.trim()}`).join("\n") + "\n\n";
+  });
+  clean = clean.replace(/<hr\b[^>]*>/gi, "\n\n---\n\n");
+
+  // Lists
+  clean = clean.replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, "\n- $1");
+
+  // Links: [text](href)
+  clean = clean.replace(/<a\b[^>]*\bhref=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href, linkText) => {
+    const txt = linkText.replace(/<[^>]+>/g, "").trim();
+    if (!txt || !href || href.startsWith("#") || /^javascript:/i.test(href)) {
+      return txt;
+    }
+    try {
+      const resolved = new URL(href, target).toString();
+      return `[${txt}](${resolved})`;
+    } catch {
+      return txt;
+    }
+  });
+
+  // Images: ![alt](src)
+  clean = clean.replace(/<img\b[^>]*>/gi, (imgTag) => {
+    const srcMatch = imgTag.match(/\bsrc=["']([^"']*)["']/i);
+    const altMatch = imgTag.match(/\balt=["']([^"']*)["']/i);
+    if (!srcMatch) return "";
+    const alt = altMatch ? altMatch[1].trim() : "";
+    try {
+      const resolved = new URL(srcMatch[1], target).toString();
+      return `![${alt}](${resolved})`;
+    } catch {
+      return "";
+    }
+  });
+
+  // Emphasis and paragraphs
+  clean = clean.replace(/<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi, "**$1**");
+  clean = clean.replace(/<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)>/gi, "*$1*");
+  clean = clean.replace(/<p\b[^>]*>([\s\S]*?)<\/p>/gi, "\n\n$1\n\n");
+  clean = clean.replace(/<br\s*\/?>/gi, "\n");
+
+  // Strip all remaining HTML tags
+  clean = clean.replace(/<[^>]+>/g, "");
+
+  // Decode HTML entities
+  clean = decodeHtmlEntities(clean);
+
+  // Normalize excessive blank lines and spaces
+  clean = clean
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const words = clean ? clean.split(/\s+/).filter(Boolean).length : 0;
+
+  return {
+    target: target.toString(),
+    status: res.status,
+    contentType,
+    latencyMs,
+    title,
+    description,
+    canonical: canonical || target.toString(),
+    wordCount: words,
+    lengthChars: clean.length,
+    markdown: clean,
+  };
+}
+
+/**
+ * 13. Open Graph & Social Metadata Inspector
+ * Extracts SEO, Open Graph (og:*), Twitter Cards, favicons, and JSON-LD structured data.
+ */
+export async function extractMetadata(rawUrl: string): Promise<Record<string, unknown>> {
+  const target = normalizeTarget(rawUrl);
+  const startTime = Date.now();
+
+  const res = await fetch(target.toString(), {
+    headers: {
+      "User-Agent": TOOL_USER_AGENT,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    redirect: "follow",
+  });
+
+  const rawHtml = await res.text();
+  const latencyMs = Date.now() - startTime;
+
+  // 1. Page Title
+  const titleMatch = rawHtml.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : "";
+
+  // 2. Standard Meta Tags
+  const metaTags: Record<string, string> = {};
+  const metaRegex = /<meta\b([^>]*?)>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = metaRegex.exec(rawHtml)) !== null) {
+    const attrs = match[1];
+    const nameMatch = attrs.match(/\b(?:name|property|http-equiv)=["']([^"']*)["']/i);
+    const contentMatch = attrs.match(/\bcontent=["']([^"']*)["']/i);
+
+    if (nameMatch && contentMatch) {
+      const key = nameMatch[1].trim();
+      const val = decodeHtmlEntities(contentMatch[1].trim());
+      metaTags[key] = val;
+    }
+  }
+
+  // 3. Open Graph Grouping
+  const openGraph: Record<string, string> = {};
+  // 4. Twitter Card Grouping
+  const twitterCard: Record<string, string> = {};
+
+  for (const [key, val] of Object.entries(metaTags)) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.startsWith("og:")) {
+      openGraph[lowerKey] = val;
+    } else if (lowerKey.startsWith("twitter:")) {
+      twitterCard[lowerKey] = val;
+    }
+  }
+
+  // 5. Canonical link
+  const canonicalMatch =
+    rawHtml.match(/<link\b[^>]*\brel=["']canonical["'][^>]*\bhref=["']([^"']*)["']/i) ||
+    rawHtml.match(/<link\b[^>]*\bhref=["']([^"']*)["'][^>]*\brel=["']canonical["']/i);
+  const canonical = canonicalMatch ? canonicalMatch[1].trim() : null;
+
+  // 6. Favicons
+  const icons: string[] = [];
+  const iconRegex = /<link\b[^>]*\brel=["'](?:shortcut\s+)?icon|apple-touch-icon["'][^>]*>/gi;
+  let iconMatch: RegExpExecArray | null;
+  while ((iconMatch = iconRegex.exec(rawHtml)) !== null) {
+    const hrefMatch = iconMatch[0].match(/\bhref=["']([^"']*)["']/i);
+    if (hrefMatch) {
+      try {
+        icons.push(new URL(hrefMatch[1].trim(), target).toString());
+      } catch {}
+    }
+  }
+
+  // 7. Structured Data (JSON-LD)
+  const jsonLdBlocks: unknown[] = [];
+  const ldJsonRegex = /<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let ldMatch: RegExpExecArray | null;
+  while ((ldMatch = ldJsonRegex.exec(rawHtml)) !== null) {
+    const content = ldMatch[1].trim();
+    try {
+      jsonLdBlocks.push(JSON.parse(content));
+    } catch {
+      jsonLdBlocks.push({ error: "Invalid JSON-LD syntax", raw: content.slice(0, 500) });
+    }
+  }
+
+  return {
+    target: target.toString(),
+    status: res.status,
+    latencyMs,
+    title,
+    description: metaTags["description"] || openGraph["og:description"] || twitterCard["twitter:description"] || null,
+    canonical,
+    icons,
+    openGraph,
+    twitterCard,
+    jsonLd: jsonLdBlocks,
+    allMetaTags: metaTags,
+  };
+}
+

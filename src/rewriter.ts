@@ -161,6 +161,39 @@ export function rewriteHtml(html: string, pageUrl: URL): string {
     return `${attr}="${resolveAndProxy(rawVal, activeBase)}"`;
   });
 
+  // 7. Rewrite <object data="..."> tags
+  rewritten = rewritten.replace(/<object\b([^>]*?)>/gi, (objTag, attrs) => {
+    const rewrittenAttrs = attrs.replace(/\bdata\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi, (_m: string, d: string, s: string, u: string) => {
+      const rawVal = (d ?? s ?? u ?? "").trim();
+      if (!rawVal || rawVal.startsWith("#") || /^(?:javascript|data|blob):/i.test(rawVal)) {
+        return _m;
+      }
+      return `data="${resolveAndProxy(rawVal, activeBase)}"`;
+    });
+    return `<object${rewrittenAttrs}>`;
+  });
+
+  // 8. Rewrite <meta http-equiv="refresh" content="...;url=...">
+  rewritten = rewritten.replace(/<meta\b([^>]*?)>/gi, (metaTag, attrs) => {
+    if (!/\bhttp-equiv\s*=\s*["']?refresh["']?/i.test(attrs)) {
+      return metaTag;
+    }
+    const rewrittenAttrs = attrs.replace(/\bcontent\s*=\s*(?:"([^"]*)"|'([^']*)')/gi, (_m: string, dQuote?: string, sQuote?: string) => {
+      const rawContent = dQuote ?? sQuote ?? "";
+      const quote = dQuote !== undefined ? '"' : "'";
+      const refreshMatch = rawContent.match(/^(\s*\d+\s*;\s*url\s*=\s*['"]?)([^'"\s;>]+)(['"]?.*)$/i);
+      if (refreshMatch) {
+        const prefix = refreshMatch[1];
+        const targetUrl = refreshMatch[2];
+        const suffix = refreshMatch[3];
+        const proxied = resolveAndProxy(targetUrl, activeBase);
+        return `content=${quote}${prefix}${proxied}${suffix}${quote}`;
+      }
+      return _m;
+    });
+    return `<meta${rewrittenAttrs}>`;
+  });
+
   // 7. Inject client-side SPA navigation shim so Next.js/React router stays inside gateway
   const shim = buildSpaNavigationShim(activeBase);
   if (/<head\b[^>]*>/i.test(rewritten)) {

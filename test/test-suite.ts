@@ -6,7 +6,8 @@
 import { isBlockedHostname, isIPv4, isPrivateIPv4, normalizeTarget, MAX_URL_LENGTH } from "../src/security.ts";
 import { resolveAndProxy, rewriteSrcset, rewriteCss, rewriteHtml, buildResponseHeaders, gatewayUrl } from "../src/rewriter.ts";
 import { runDiagnostics } from "../src/diagnostics.ts";
-import { checkSecurityHeaders, formatJson, viewXml } from "../src/tools.ts";
+import { checkSecurityHeaders, extractMarkdown, extractMetadata, formatJson, viewXml } from "../src/tools.ts";
+import { openApiSpec } from "../src/openapi.ts";
 import { isBrowserRenderingAvailable } from "../src/browser.ts";
 import {
   getDaytonaStatus,
@@ -168,6 +169,8 @@ async function runAllTests() {
         <iframe src="/embed.html"></iframe>
         <form action="/search" method="get"></form>
         <form action="/login" method="post"></form>
+        <meta http-equiv="refresh" content="5; url=/new-page.html">
+        <object data="/docs/spec.pdf"></object>
         <div style="background-image: url('inline.png');"></div>
       </body>
     </html>
@@ -178,6 +181,8 @@ async function runAllTests() {
   test("HTML <a href> rewritten", rewrittenHtml.includes(`href="${resolveAndProxy("/about", baseHtmlUrl)}"`));
   test("HTML fragment <a href='#section'> untouched", rewrittenHtml.includes('href="#section"'));
   test("HTML <img src> rewritten", rewrittenHtml.includes(`src="${resolveAndProxy("pic.jpg", baseHtmlUrl)}"`));
+  test("HTML <object data> rewritten", rewrittenHtml.includes(`data="${resolveAndProxy("/docs/spec.pdf", baseHtmlUrl)}"`));
+  test("HTML <meta http-equiv='refresh'> rewritten", rewrittenHtml.includes(`url=${resolveAndProxy("/new-page.html", baseHtmlUrl)}`));
   test("HTML <video src and poster> rewritten", rewrittenHtml.includes(`poster="${resolveAndProxy("/poster.jpg", baseHtmlUrl)}"`) && rewrittenHtml.includes(`src="${resolveAndProxy("/vid.mp4", baseHtmlUrl)}"`));
   test("HTML <source src> rewritten", rewrittenHtml.includes(`src="${resolveAndProxy("/vid.webm", baseHtmlUrl)}"`));
   test("HTML <audio src> rewritten", rewrittenHtml.includes(`src="${resolveAndProxy("/song.mp3", baseHtmlUrl)}"`));
@@ -267,6 +272,8 @@ async function runAllTests() {
   assertBlocked("http://2130706433", "Decimal integer representation of 127.0.0.1");
   assertBlocked("http://0x7f000001", "Hex representation of 127.0.0.1");
   assertBlocked("http://0177.0.0.1", "Octal leading-zero representation");
+  assertBlocked("http://127.1", "Shorthand IPv4 representation of 127.0.0.1");
+  assertBlocked("http://10.1", "Shorthand IPv4 representation of 10.0.0.1");
 
   // 2.5 Unsupported protocols
   assertBlocked("file:///etc/passwd", "file:// scheme");
@@ -544,6 +551,79 @@ async function runAllTests() {
   const rawReq = new Request("https://gateway/proxy?url=https%3A%2F%2Fexample.com&raw=true", { method: "GET" });
   const rawRes = await worker.fetch(rawReq, regressionEnv);
   test("Raw Passthrough: Attaches X-RouteX-Mode: raw-passthrough header", rawRes.headers.get("X-RouteX-Mode") === "raw-passthrough");
+
+  // ----------------------------------------------------
+  // SECTION 8: NEW ENHANCEMENTS & TOOLS
+  // ----------------------------------------------------
+  console.log("\n--- Section 8: OpenAPI 3.1, Markdown, Metadata & Downloads ---");
+
+  // 8.1 OpenAPI 3.1 Schema Endpoint
+  const openApiReq = new Request("https://gateway/openapi.json", { method: "GET" });
+  const openApiRes = await worker.fetch(openApiReq, regressionEnv);
+  const openApiData = (await openApiRes.json()) as any;
+  test("OpenAPI 3.1: Serves valid schema via /openapi.json", openApiRes.status === 200 && openApiData.openapi === "3.1.0");
+  test("OpenAPI 3.1: Spec includes all core and inspector endpoints", Boolean(openApiData.paths?.["/proxy"] && openApiData.paths?.["/api/tools/markdown"] && openApiData.paths?.["/api/tools/metadata"]));
+
+  // 8.2 Force Download Header
+  const downloadReq = new Request("https://gateway/proxy?url=https%3A%2F%2Fexample.com%2Freport.pdf&download=1", { method: "GET" });
+  const downloadRes = await worker.fetch(downloadReq, regressionEnv);
+  test("Proxy Download Mode: Sets Content-Disposition attachment header", downloadRes.headers.get("Content-Disposition")?.includes("attachment; filename=") === true);
+
+  // 8.3 XML Tool Endpoint
+  const xmlReq = new Request("https://gateway/api/tools/xml?url=https%3A%2F%2Fexample.com", { method: "GET" });
+  const xmlRes = await worker.fetch(xmlReq, regressionEnv);
+  const xmlData = (await xmlRes.json()) as any;
+  test("XML Inspector Tool: Returns HTTP 200 with structured parsing info", xmlRes.status === 200 && Boolean(xmlData.target));
+
+  // 8.4 Markdown Extractor Tool
+  const markdownReq = new Request("https://gateway/api/tools/markdown?url=https%3A%2F%2Fexample.com", { method: "GET" });
+  const markdownRes = await worker.fetch(markdownReq, regressionEnv);
+  const markdownData = (await markdownRes.json()) as any;
+  test("Markdown Extractor Tool: Returns 200 with title and markdown content", markdownRes.status === 200 && typeof markdownData.markdown === "string" && typeof markdownData.wordCount === "number");
+
+  // 8.5 Open Graph & SEO Metadata Extractor Tool
+  const metadataReq2 = new Request("https://gateway/api/tools/metadata?url=https%3A%2F%2Fexample.com", { method: "GET" });
+  const metadataRes2 = await worker.fetch(metadataReq2, regressionEnv);
+  const metadataData2 = (await metadataRes2.json()) as any;
+  test("Metadata Tool: Returns 200 with title, canonical and openGraph object", metadataRes2.status === 200 && Boolean(metadataData2.openGraph !== undefined) && Boolean(metadataData2.twitterCard !== undefined));
+
+  // 8.6 CORS Proxy Alias
+  const corsReq = new Request("https://gateway/cors?url=https%3A%2F%2Fexample.com", { method: "GET" });
+  const corsRes = await worker.fetch(corsReq, regressionEnv);
+  test("CORS Proxy Endpoint: Automatically activates raw mode with CORS headers", corsRes.headers.get("X-RouteX-Mode") === "raw-passthrough" && corsRes.headers.get("Access-Control-Allow-Origin") === "*");
+
+  // 8.7 Static Asset Robots & Favicon
+  const staticEnv: Env = {
+    ASSETS: {
+      fetch: async (req: Request) => {
+        const u = new URL(req.url);
+        return new Response(`content of ${u.pathname}`, { status: 200, headers: { "Content-Type": "text/plain" } });
+      }
+    } as any
+  };
+  const robotsReq = new Request("https://gateway/robots.txt", { method: "GET" });
+  const robotsRes = await worker.fetch(robotsReq, staticEnv);
+  test("Static Assets: Serves /robots.txt from ASSETS binding", robotsRes.status === 200);
+
+  const faviconSvgReq = new Request("https://gateway/favicon.svg", { method: "GET" });
+  const faviconSvgRes = await worker.fetch(faviconSvgReq, staticEnv);
+  test("Static Assets: Serves /favicon.svg from ASSETS binding", faviconSvgRes.status === 200);
+
+  // 8.8 Turnstile Config Endpoint
+  const turnstileConfigReq = new Request("https://gateway/api/turnstile/config", { method: "GET" });
+  const turnstileConfigRes = await worker.fetch(turnstileConfigReq, regressionEnv);
+  const turnstileConfigData = (await turnstileConfigRes.json()) as any;
+  test("Turnstile Config: Reports disabled when secret key not configured", turnstileConfigRes.status === 200 && turnstileConfigData.enabled === false);
+
+  const turnstileConfigEnv: Env = {
+    ...regressionEnv,
+    TURNSTILE_SECRET_KEY: "0x4AAAAAA",
+    TURNSTILE_SITE_KEY: "0x4BBBBBB",
+  };
+  const turnstileConfigReq2 = new Request("https://gateway/api/turnstile/config", { method: "GET" });
+  const turnstileConfigRes2 = await worker.fetch(turnstileConfigReq2, turnstileConfigEnv);
+  const turnstileConfigData2 = (await turnstileConfigRes2.json()) as any;
+  test("Turnstile Config: Reports enabled and exposes siteKey when keys present", turnstileConfigRes2.status === 200 && turnstileConfigData2.enabled === true && turnstileConfigData2.siteKey === "0x4BBBBBB");
 
   // ----------------------------------------------------
   // TEST SUMMARY
