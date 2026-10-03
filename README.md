@@ -7,7 +7,7 @@
   <img src="public/favicon.svg" width="96" height="96" alt="RouteX Logo" />
 </a>
 
-# ⚡ RouteX
+# RouteX
 ### High-Performance Stateless HTTP/HTTPS Web Gateway for Cloudflare Workers
 
 Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
@@ -67,6 +67,8 @@ No persistent databases. No cookies saved. No browsing history logs. **Pure stat
   - [Resource & Size Limits](#resource--size-limits)
 - [Content-Type Routing & Rewriting](#content-type-routing--rewriting)
 - [Stateless Inspector Tools](#stateless-inspector-tools)
+- [Model Context Protocol (MCP) Integration](#model-context-protocol-mcp-integration)
+- [Raw Markdown Reader & Developer Utilities](#raw-markdown-reader--developer-utilities)
 - [Optional Cloudflare Browser Rendering](#optional-cloudflare-browser-rendering)
 - [Privacy Model & Platform Transparency](#privacy-model--platform-transparency)
 - [Automated Testing](#automated-testing)
@@ -371,6 +373,72 @@ RouteX includes 18 independent inspection tools accessible via REST endpoints:
 | `GET /r/:url` or `GET /r?url=...` | **Direct Markdown Reader** | Fetches and returns raw `text/markdown` directly without wrapper, designed for `curl` and LLMs. |
 | `GET /docs` | **Scalar API Reference** | Modern interactive API documentation powered by Scalar and OpenAPI 3.1. |
 | `GET /openapi.json` | **OpenAPI 3.1 Spec** | Formal schema definition for Swagger UI, Postman, and MCP integrations. |
+
+---
+
+## Model Context Protocol (MCP) Integration
+
+RouteX provides an Anthropic-compliant **Model Context Protocol (MCP)** JSON-RPC 2.0 endpoint at `/mcp`. This allows AI developer tools (Claude Desktop, Cursor, Antigravity, Claude Code) to use RouteX autonomously as an external web gateway and inspection engine.
+
+### Available MCP Tools
+
+1. `routex_fetch_markdown`: Fetches any webpage, strips HTML boilerplate, and returns clean Markdown.
+2. `routex_dns_lookup`: Queries Cloudflare 1.1.1.1 DoH for DNS records (A, AAAA, MX, TXT, NS, CNAME).
+3. `routex_whois_lookup`: Performs official ICANN RDAP domain registration queries.
+4. `routex_metadata`: Extracts Open Graph, Twitter Cards, canonical links, and JSON-LD structured data.
+5. `routex_security_headers`: Performs an automated audit of HSTS, CSP, X-Frame-Options, and Referrer-Policy.
+6. `routex_archive_lookup`: Queries the Wayback Machine (archive.org) for closest historical snapshots.
+
+### Claude Desktop & Cursor Configuration
+
+Add RouteX to your `claude_desktop_config.json` or `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "routex": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://routex-web-gateway.apkscope.workers.dev/mcp"
+      ]
+    }
+  }
+}
+```
+
+Or query the MCP endpoint directly with JSON-RPC:
+```bash
+curl -s -X POST "https://routex-web-gateway.apkscope.workers.dev/mcp" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"routex_dns_lookup","arguments":{"domain":"cloudflare.com"}}}'
+```
+
+---
+
+## Raw Markdown Reader & Developer Utilities
+
+### Direct Markdown Reader (`/r/:url`)
+Designed specifically for terminal CLI usage, `curl`, and LLM ingest pipelines. Strips scripts, navigation, and styles, returning pure `text/markdown`:
+
+```bash
+curl -s https://routex-web-gateway.apkscope.workers.dev/r/https://en.wikipedia.org/wiki/Cloudflare
+```
+
+### Edge Client Inspector (`/ip`)
+Returns your public IP, country, city, ASN, and Cloudflare edge data center (Colo) code with zero database lookups:
+
+```bash
+curl -s https://routex-web-gateway.apkscope.workers.dev/ip
+```
+
+### Developer Request Echo (`/echo`)
+Echoes incoming headers, HTTP methods, client IP, and TLS handshake metadata back as formatted JSON (an edge-fast alternative to `httpbin.org`):
+
+```bash
+curl -s https://routex-web-gateway.apkscope.workers.dev/echo -H "X-Custom-Header: test"
+```
 
 ---
 
