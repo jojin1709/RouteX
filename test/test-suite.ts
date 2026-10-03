@@ -6,7 +6,7 @@
 import { isBlockedHostname, isIPv4, isPrivateIPv4, normalizeTarget, MAX_URL_LENGTH } from "../src/security.ts";
 import { resolveAndProxy, rewriteSrcset, rewriteCss, rewriteHtml, buildResponseHeaders, gatewayUrl } from "../src/rewriter.ts";
 import { runDiagnostics } from "../src/diagnostics.ts";
-import { checkSecurityHeaders, extractMarkdown, extractMetadata, formatJson, viewXml } from "../src/tools.ts";
+import { checkSecurityHeaders, extractMarkdown, extractMetadata, formatJson, lookupWhois, parseFeed, viewXml } from "../src/tools.ts";
 import { openApiSpec } from "../src/openapi.ts";
 import { isBrowserRenderingAvailable } from "../src/browser.ts";
 import {
@@ -624,6 +624,38 @@ async function runAllTests() {
   const turnstileConfigRes2 = await worker.fetch(turnstileConfigReq2, turnstileConfigEnv);
   const turnstileConfigData2 = (await turnstileConfigRes2.json()) as any;
   test("Turnstile Config: Reports enabled and exposes siteKey when keys present", turnstileConfigRes2.status === 200 && turnstileConfigData2.enabled === true && turnstileConfigData2.siteKey === "0x4BBBBBB");
+
+  // 8.9 Direct Raw Markdown Reader
+  const rSlashReq = new Request("https://gateway/r/https://example.com", { method: "GET" });
+  const rSlashRes = await worker.fetch(rSlashReq, regressionEnv);
+  const rSlashText = await rSlashRes.text();
+  test("Direct Markdown Reader (/r/:url): Returns raw text/markdown", rSlashRes.status === 200 && rSlashRes.headers.get("Content-Type")?.includes("text/markdown") === true && rSlashText.includes("Example Domain"));
+
+  const rParamReq = new Request("https://gateway/r?url=https%3A%2F%2Fexample.com", { method: "GET" });
+  const rParamRes = await worker.fetch(rParamReq, regressionEnv);
+  test("Direct Markdown Reader (/r?url=...): Returns 200 with text/markdown", rParamRes.status === 200 && rParamRes.headers.get("Content-Type")?.includes("text/markdown") === true);
+
+  // 8.10 Scalar Docs Endpoint (/docs)
+  const docsReq = new Request("https://gateway/docs", { method: "GET" });
+  const docsRes = await worker.fetch(docsReq, staticEnv);
+  const docsText = await docsRes.text();
+  test("Scalar Docs (/docs): Serves docs.html from ASSETS binding", docsRes.status === 200 && docsText.includes("/docs.html"));
+
+  // 8.11 Whois & RDAP Lookup Tool
+  const whoisLoopbackReq = new Request("https://gateway/api/tools/whois?domain=127.0.0.1", { method: "GET" });
+  const whoisLoopbackRes = await worker.fetch(whoisLoopbackReq, regressionEnv);
+  test("Whois Tool: SSRF loopback target rejected with 400 Bad Request", whoisLoopbackRes.status === 400);
+
+  const whoisPublicReq = new Request("https://gateway/api/tools/whois?domain=example.com", { method: "GET" });
+  const whoisPublicRes = await worker.fetch(whoisPublicReq, regressionEnv);
+  const whoisPublicData = (await whoisPublicRes.json()) as any;
+  test("Whois Tool: Returns structured domain details", whoisPublicRes.status === 200 && whoisPublicData.domain === "example.com");
+
+  // 8.12 Feed Parser Tool
+  const feedReq = new Request("https://gateway/api/tools/feed?url=https%3A%2F%2Fexample.com", { method: "GET" });
+  const feedRes = await worker.fetch(feedReq, regressionEnv);
+  const feedData = (await feedRes.json()) as any;
+  test("Feed Parser: Returns structured feed analysis object", feedRes.status === 200 && Boolean(feedData.channel !== undefined) && Array.isArray(feedData.items));
 
   // ----------------------------------------------------
   // TEST SUMMARY

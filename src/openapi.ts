@@ -97,6 +97,37 @@ export const openApiSpec = {
         },
       },
     },
+    "/r/{url}": {
+      get: {
+        summary: "Direct Raw Markdown Reader (like r.jina.ai)",
+        description: "Directly returns clean, stripped Markdown content from any webpage as raw text/markdown for CLI/LLM usage.",
+        parameters: [
+          {
+            name: "url",
+            in: "path",
+            required: true,
+            description: "Target URL (e.g. /r/https://example.com)",
+            schema: { type: "string", example: "https://example.com" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Raw Markdown stream",
+            content: { "text/markdown": { schema: { type: "string" } } },
+          },
+          "400": { description: "Invalid or SSRF-blocked target" },
+        },
+      },
+    },
+    "/docs": {
+      get: {
+        summary: "Interactive Scalar OpenAPI Documentation",
+        description: "Renders the interactive Scalar API explorer and playground in dark mode.",
+        responses: {
+          "200": { description: "HTML interactive documentation application" },
+        },
+      },
+    },
     "/diagnostics": {
       get: {
         summary: "9-Probe Technical Compatibility Evaluation",
@@ -320,6 +351,38 @@ export const openApiSpec = {
         responses: {
           "200": { description: "Comprehensive metadata object" },
         },
+      },
+    },
+    "/api/tools/whois": {
+      get: {
+        summary: "Domain Registration & RDAP Lookup",
+        description: "Queries ICANN RDAP for domain registrar, creation date, expiration date, nameservers, and status.",
+        parameters: [
+          {
+            name: "domain",
+            in: "query",
+            required: true,
+            description: "Target domain name",
+            schema: { type: "string", example: "cloudflare.com" },
+          },
+        ],
+        responses: { "200": { description: "RDAP registration details" } },
+      },
+    },
+    "/api/tools/feed": {
+      get: {
+        summary: "RSS & Atom Feed Parser",
+        description: "Fetches and parses RSS/Atom feeds, returning structured channel metadata and article items.",
+        parameters: [
+          {
+            name: "url",
+            in: "query",
+            required: true,
+            description: "RSS or Atom feed URL",
+            schema: { type: "string", example: "https://blog.cloudflare.com/rss/" },
+          },
+        ],
+        responses: { "200": { description: "Parsed feed articles list" } },
       },
     },
     "/api/tools/response-info": {

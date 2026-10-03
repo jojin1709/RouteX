@@ -25,7 +25,8 @@
         <a href="/?tab=diagnostics" class="nav-tab">Diagnostics</a>
         <a href="/?tab=browser" class="nav-tab">Browser Lab</a>
         <a href="/?tab=inspector" class="nav-tab">Inspector</a>
-        <a href="/api" class="nav-tab active">API Docs</a>
+        <a href="/api" class="nav-tab active">API Catalog</a>
+        <a href="/docs" class="nav-tab" target="_blank">Scalar /docs &rarr;</a>
       </nav>
 
       <div class="header-right">
@@ -42,6 +43,7 @@
             <p class="subtitle">High-performance, stateless web gateway endpoints running on Cloudflare Workers edge. Complete with SSRF filtering, asset rewriting, and security diagnostics.</p>
           </div>
           <div style="display:flex; gap:8px;">
+            <a href="/docs" class="btn-ghost mono" target="_blank">Scalar /docs &rarr;</a>
             <a href="/openapi.json" class="btn-ghost mono" target="_blank">OpenAPI 3.1 &rarr;</a>
             <a href="/api.json" class="btn-ghost mono" target="_blank">View Raw JSON &rarr;</a>
           </div>
@@ -81,13 +83,17 @@
                 <optgroup label="Core Gateway">
                   <option value="/health" data-method="GET">GET /health</option>
                   <option value="/proxy" data-method="GET" data-param="url">GET /proxy?url={url}</option>
+                  <option value="/cors" data-method="GET" data-param="url">GET /cors?url={url}</option>
+                  <option value="/r" data-method="GET" data-param="url">GET /r?url={url} (Raw Markdown)</option>
                   <option value="/openapi.json" data-method="GET">GET /openapi.json</option>
+                  <option value="/docs" data-method="GET">GET /docs (Scalar Explorer)</option>
                 </optgroup>
                 <optgroup label="Diagnostics Probes">
                   <option value="/diagnostics" data-method="GET" data-param="url">GET /diagnostics?url={url}</option>
                 </optgroup>
                 <optgroup label="Stateless Inspector Tools">
                   <option value="/api/tools/dns" data-method="GET" data-param="url">GET /api/tools/dns?domain={domain}</option>
+                  <option value="/api/tools/whois" data-method="GET" data-param="url">GET /api/tools/whois?domain={domain}</option>
                   <option value="/api/tools/tls" data-method="GET" data-param="url">GET /api/tools/tls?url={url}</option>
                   <option value="/api/tools/security-headers" data-method="GET" data-param="url" selected>GET /api/tools/security-headers?url={url}</option>
                   <option value="/api/tools/headers" data-method="GET" data-param="url">GET /api/tools/headers?url={url}</option>
@@ -95,6 +101,7 @@
                   <option value="/api/tools/links" data-method="GET" data-param="url">GET /api/tools/links?url={url}</option>
                   <option value="/api/tools/robots" data-method="GET" data-param="url">GET /api/tools/robots?url={url}</option>
                   <option value="/api/tools/sitemap" data-method="GET" data-param="url">GET /api/tools/sitemap?url={url}</option>
+                  <option value="/api/tools/feed" data-method="GET" data-param="url">GET /api/tools/feed?url={url}</option>
                   <option value="/api/tools/json" data-method="GET" data-param="url">GET /api/tools/json?url={url}</option>
                   <option value="/api/tools/xml" data-method="GET" data-param="url">GET /api/tools/xml?url={url}</option>
                   <option value="/api/tools/markdown" data-method="GET" data-param="url">GET /api/tools/markdown?url={url}</option>

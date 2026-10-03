@@ -1,5 +1,5 @@
 > [!NOTE]
-> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 12 stateless inspector tools, multi-probe compatibility diagnostics, OpenAPI 3.1 specification, and optional Daytona compute integration.
+> **[RouteX Production Gateway is Live](https://routex-web-gateway.apkscope.workers.dev):** Hardened stateless HTTP/HTTPS web gateway with multi-layered SSRF defense, automated URL & resource rewriting, 14 stateless inspector tools, multi-probe compatibility diagnostics, OpenAPI 3.1 specification, and optional Daytona compute integration.
 
 <div align="center">
 
@@ -15,7 +15,7 @@ Developed by **[JOJIN JOHN](https://github.com/jojin1709)**
 [![Cloudflare Workers](https://img.shields.io/badge/Platform-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Storage](https://img.shields.io/badge/Storage-100%25%20Stateless-success.svg)](#zero-application-persistence)
-[![Tests Passing](https://img.shields.io/badge/Tests-150%2F150%20Passing-brightgreen.svg)](#automated-testing)
+[![Tests Passing](https://img.shields.io/badge/Tests-156%2F156%20Passing-brightgreen.svg)](#automated-testing)
 [![SSRF Protected](https://img.shields.io/badge/Security-Multi--Layer%20SSRF%20Defense-red.svg)](#security-model--ssrf-defense)
 [![Daytona Compatible](https://img.shields.io/badge/Compute-Daytona%20Sandboxes-blueviolet.svg)](#daytona-integration)
 
@@ -343,7 +343,7 @@ Requests to any of the following are terminated at the edge with `400 Bad Reques
 
 ## Stateless Inspector Tools
 
-RouteX includes 12 independent inspection tools accessible via REST endpoints:
+RouteX includes 14 independent inspection tools accessible via REST endpoints:
 
 | Endpoint | Tool Name | Description |
 | :--- | :--- | :--- |
@@ -359,7 +359,11 @@ RouteX includes 12 independent inspection tools accessible via REST endpoints:
 | `GET /api/tools/xml?url=...` | **XML Viewer** | Inspects and validates XML feeds and documents. |
 | `GET /api/tools/markdown?url=...` | **Article & Markdown Extractor** | Strips boilerplate HTML, returning clean Markdown optimized for AI prompts and CLI usage. |
 | `GET /api/tools/metadata?url=...` | **Open Graph & SEO Metadata** | Extracts Open Graph (`og:*`), Twitter Cards, canonical tags, favicons, and JSON-LD structured data. |
+| `GET /api/tools/whois?domain=...` | **Domain & RDAP Whois** | Queries ICANN RDAP for domain registrar, statuses, nameservers, and registration events. |
+| `GET /api/tools/feed?url=...` | **RSS & Atom Feed Parser** | Parses syndicated RSS 2.0 / Atom XML feeds into structured JSON objects. |
 | `GET /api/tools/response-info?url=...` | **Response Info** | Analyzes response size, content type, transfer encoding, and HTTP status. |
+| `GET /r/:url` or `GET /r?url=...` | **Direct Markdown Reader** | Fetches and returns raw `text/markdown` directly without wrapper, designed for `curl` and LLMs. |
+| `GET /docs` | **Scalar API Reference** | Modern interactive API documentation powered by Scalar and OpenAPI 3.1. |
 | `GET /openapi.json` | **OpenAPI 3.1 Spec** | Formal schema definition for Swagger UI, Postman, and MCP integrations. |
 
 ---
@@ -389,7 +393,7 @@ Do not claim that "nothing anywhere is stored." Cloudflare as the underlying edg
 
 ## Automated Testing
 
-RouteX is backed by an automated 150-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
+RouteX is backed by an automated 156-test verification suite covering URL rewriting, SSRF matrix validation, header handling, tools, diagnostics, and Daytona integration:
 
 ```bash
 npm test
@@ -545,11 +549,30 @@ npm test
   [PASS] TLS Tool: Non-HTTPS target flags isHttps=false
   [PASS] Raw Passthrough: Attaches X-RouteX-Mode: raw-passthrough header
 
+--- Section 8: OpenAPI 3.1, Markdown, Metadata & Downloads ---
+  [PASS] OpenAPI 3.1: Serves valid schema via /openapi.json
+  [PASS] OpenAPI 3.1: Spec includes all core and inspector endpoints
+  [PASS] Proxy Download Mode: Sets Content-Disposition attachment header
+  [PASS] XML Inspector Tool: Returns HTTP 200 with structured parsing info
+  [PASS] Markdown Extractor Tool: Returns 200 with title and markdown content
+  [PASS] Metadata Tool: Returns 200 with title, canonical and openGraph object
+  [PASS] CORS Proxy Endpoint: Automatically activates raw mode with CORS headers
+  [PASS] Static Assets: Serves /robots.txt from ASSETS binding
+  [PASS] Static Assets: Serves /favicon.svg from ASSETS binding
+  [PASS] Turnstile Config: Reports disabled when secret key not configured
+  [PASS] Turnstile Config: Reports enabled and exposes siteKey when keys present
+  [PASS] Direct Markdown Reader (/r/:url): Returns raw text/markdown
+  [PASS] Direct Markdown Reader (/r?url=...): Returns 200 with text/markdown
+  [PASS] Scalar Docs (/docs): Serves docs.html from ASSETS binding
+  [PASS] Whois Tool: SSRF loopback target rejected with 400 Bad Request
+  [PASS] Whois Tool: Returns structured domain details
+  [PASS] Feed Parser: Returns structured feed analysis object
+
 ==================================================
   TEST SUMMARY
 ==================================================
-  TOTAL:  135 tests
-  PASSED: 135
+  TOTAL:  156 tests
+  PASSED: 156
   FAILED: 0
 
 All automated tests passed successfully!

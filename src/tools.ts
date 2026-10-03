@@ -737,3 +737,195 @@ export async function extractMetadata(rawUrl: string): Promise<Record<string, un
   };
 }
 
+/**
+ * 14. Domain Whois / RDAP Registration Lookup
+ * Queries ICANN RDAP for domain registration details, registrar, expiration, and status.
+ */
+export async function lookupWhois(rawDomain: string): Promise<Record<string, unknown>> {
+  let domain = rawDomain.trim().toLowerCase();
+  try {
+    if (domain.startsWith("http://") || domain.startsWith("https://")) {
+      domain = new URL(domain).hostname;
+    } else if (domain.includes("/")) {
+      domain = domain.split("/")[0];
+    }
+  } catch {}
+
+  const dummyTarget = normalizeTarget(`https://${domain}`);
+  const validatedHost = dummyTarget.hostname;
+  const startTime = Date.now();
+
+  try {
+    const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(validatedHost)}`;
+    const res = await fetch(rdapUrl, {
+      headers: {
+        Accept: "application/rdap+json, application/json",
+        "User-Agent": TOOL_USER_AGENT,
+      },
+      redirect: "follow",
+    });
+    const latencyMs = Date.now() - startTime;
+
+    if (!res.ok) {
+      return {
+        domain: validatedHost,
+        found: false,
+        status: res.status,
+        message: `RDAP lookup returned HTTP ${res.status}`,
+        latencyMs,
+      };
+    }
+
+    const data = (await res.json()) as any;
+
+    let registrar: string | null = null;
+    if (Array.isArray(data.entities)) {
+      for (const ent of data.entities) {
+        if (Array.isArray(ent.roles) && ent.roles.includes("registrar")) {
+          const vcard = ent.vcardArray?.[1];
+          if (Array.isArray(vcard)) {
+            const fn = vcard.find((v: any[]) => Array.isArray(v) && v[0] === "fn");
+            if (fn && fn[3]) {
+              registrar = String(fn[3]);
+              break;
+            }
+          }
+          if (!registrar && ent.handle) {
+            registrar = ent.handle;
+          }
+        }
+      }
+    }
+
+    const events: Record<string, string> = {};
+    if (Array.isArray(data.events)) {
+      for (const ev of data.events) {
+        if (ev.eventAction && ev.eventDate) {
+          events[ev.eventAction] = ev.eventDate;
+        }
+      }
+    }
+
+    const nameservers: string[] = [];
+    if (Array.isArray(data.nameservers)) {
+      for (const ns of data.nameservers) {
+        if (ns.ldhName) nameservers.push(ns.ldhName);
+        else if (ns.handle) nameservers.push(ns.handle);
+      }
+    }
+
+    return {
+      domain: validatedHost,
+      found: true,
+      handle: data.handle || null,
+      status: Array.isArray(data.status) ? data.status : [],
+      registrar,
+      registeredDate: events["registration"] || events["transfer"] || null,
+      expirationDate: events["expiration"] || null,
+      lastChangedDate: events["last changed"] || events["last update"] || null,
+      nameservers,
+      latencyMs,
+      rdapServer: "https://rdap.org",
+    };
+  } catch (err) {
+    return {
+      domain: validatedHost,
+      found: false,
+      error: err instanceof Error ? err.message : "RDAP query error",
+    };
+  }
+}
+
+/**
+ * 15. RSS & Atom Feed Parser
+ * Fetches and parses RSS/Atom XML feeds into structured articles.
+ */
+export async function parseFeed(rawUrl: string): Promise<Record<string, unknown>> {
+  const target = normalizeTarget(rawUrl);
+  const startTime = Date.now();
+
+  const res = await fetch(target.toString(), {
+    headers: {
+      "User-Agent": TOOL_USER_AGENT,
+      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml",
+    },
+    redirect: "follow",
+  });
+
+  const xmlText = await res.text();
+  const latencyMs = Date.now() - startTime;
+
+  const isAtom = /<feed\b[^>]*>/i.test(xmlText);
+  const isRss = /<rss\b|<channel\b/i.test(xmlText);
+
+  // Extract channel metadata
+  const channelTitleMatch = xmlText.match(/<(?:channel|feed)\b[^>]*>[\s\S]*?<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  const channelTitle = channelTitleMatch ? decodeHtmlEntities(channelTitleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1").trim()) : "";
+
+  const channelDescMatch = xmlText.match(/<(?:description|subtitle)\b[^>]*>([\s\S]*?)<\/(?:description|subtitle)>/i);
+  const channelDesc = channelDescMatch ? decodeHtmlEntities(channelDescMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1").trim()) : "";
+
+  const items: Array<{
+    title: string;
+    link: string;
+    pubDate: string;
+    description: string;
+    author: string;
+  }> = [];
+
+  const itemRegex = isAtom
+    ? /<entry\b[^>]*>([\s\S]*?)<\/entry>/gi
+    : /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+
+  let m: RegExpExecArray | null;
+  while ((m = itemRegex.exec(xmlText)) !== null && items.length < 50) {
+    const itemXml = m[1];
+
+    const titleMatch = itemXml.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+    const rawTitle = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1").trim() : "";
+
+    let link = "";
+    if (isAtom) {
+      const atomLink = itemXml.match(/<link\b[^>]*\bhref=["']([^"']*)["']/i);
+      link = atomLink ? atomLink[1].trim() : "";
+    }
+    if (!link) {
+      const standardLink = itemXml.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i);
+      link = standardLink ? standardLink[1].replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1").trim() : "";
+    }
+
+    const dateMatch = itemXml.match(/<(?:pubDate|published|updated)\b[^>]*>([\s\S]*?)<\/(?:pubDate|published|updated)>/i);
+    const pubDate = dateMatch ? dateMatch[1].trim() : "";
+
+    const descMatch = itemXml.match(/<(?:description|summary|content)\b[^>]*>([\s\S]*?)<\/(?:description|summary|content)>/i);
+    const rawDesc = descMatch
+      ? descMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1").replace(/<[^>]+>/g, " ").slice(0, 300).trim()
+      : "";
+
+    const authorMatch = itemXml.match(/<(?:author|dc:creator)\b[^>]*>([\s\S]*?)<\/(?:author|dc:creator)>/i);
+    const author = authorMatch ? authorMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+
+    items.push({
+      title: decodeHtmlEntities(rawTitle),
+      link,
+      pubDate,
+      description: decodeHtmlEntities(rawDesc),
+      author: decodeHtmlEntities(author),
+    });
+  }
+
+  return {
+    target: target.toString(),
+    format: isAtom ? "atom" : isRss ? "rss" : "unknown",
+    status: res.status,
+    latencyMs,
+    channel: {
+      title: channelTitle,
+      description: channelDesc,
+    },
+    totalItems: items.length,
+    items,
+  };
+}
+
+

@@ -27,6 +27,8 @@ import {
   inspectHeaders,
   inspectTls,
   lookupDns,
+  lookupWhois,
+  parseFeed,
   parseSitemap,
   responseInfo,
   traceRedirects,
@@ -330,6 +332,57 @@ export default {
       return proxy(request, env);
     }
 
+    // --- Direct Raw Markdown Reader (like r.jina.ai) ---
+    if (pathname === "/r" || pathname.startsWith("/r/")) {
+      let rawTarget = "";
+      if (pathname === "/r") {
+        rawTarget = url.searchParams.get("url") || "";
+      } else {
+        const fullUrlStr = request.url;
+        const rIndex = fullUrlStr.indexOf("/r/");
+        if (rIndex !== -1) {
+          rawTarget = fullUrlStr.slice(rIndex + 3);
+          // If browser normalized https:/domain to single slash, fix it
+          if (/^https?:\/[^\/]/i.test(rawTarget)) {
+            rawTarget = rawTarget.replace(/^(https?):\/+/i, "$1://");
+          }
+        }
+      }
+
+      if (!rawTarget) {
+        return new Response("Missing target URL. Example: /r/https://example.com or /r?url=https://example.com", {
+          status: 400,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "X-RouteX-Gateway": "1" },
+        });
+      }
+
+      try {
+        const report = await extractMarkdown(rawTarget);
+        const md = typeof report.markdown === "string" ? report.markdown : "";
+        return new Response(md, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "X-RouteX-Gateway": "1",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      } catch (err) {
+        return new Response(err instanceof Error ? err.message : "Markdown extraction failed.", {
+          status: 400,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "X-RouteX-Gateway": "1" },
+        });
+      }
+    }
+
+    // --- Interactive Scalar OpenAPI Documentation ---
+    if (pathname === "/docs" || pathname === "/docs/") {
+      if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
+        const docsReq = new Request(new URL("/docs.html", request.url), request);
+        return env.ASSETS.fetch(docsReq);
+      }
+    }
+
     // --- Phase 4: RouteX Diagnostics ---
     if (pathname === "/diagnostics" || pathname === "/api/diagnostics") {
       const target = url.searchParams.get("url");
@@ -393,6 +446,10 @@ export default {
           case "/api/tools/metadata":
           case "/api/tools/meta":
             return Response.json(await extractMetadata(target));
+          case "/api/tools/whois":
+            return Response.json(await lookupWhois(target));
+          case "/api/tools/feed":
+            return Response.json(await parseFeed(target));
           case "/api/tools/response-info":
             return Response.json(await responseInfo(target));
           default:
@@ -478,10 +535,11 @@ export default {
           docs: `${url.origin}/api`,
           openapi: `${url.origin}/openapi.json`,
           endpoints: {
-            core: ["/health", "/proxy?url=https://example.com", "/openapi.json"],
+            core: ["/health", "/proxy?url=https://example.com", "/cors?url=https://example.com", "/r/https://example.com", "/docs", "/openapi.json"],
             diagnostics: ["/diagnostics?url=https://example.com"],
             inspectorTools: [
               "/api/tools/dns?domain=example.com",
+              "/api/tools/whois?domain=example.com",
               "/api/tools/tls?url=https://example.com",
               "/api/tools/security-headers?url=https://example.com",
               "/api/tools/headers?url=https://example.com",
@@ -489,6 +547,7 @@ export default {
               "/api/tools/links?url=https://example.com",
               "/api/tools/robots?url=https://example.com",
               "/api/tools/sitemap?url=https://example.com",
+              "/api/tools/feed?url=https://blog.cloudflare.com/rss/",
               "/api/tools/json?url=https://httpbin.org/json",
               "/api/tools/xml?url=https://httpbin.org/xml",
               "/api/tools/markdown?url=https://example.com",
@@ -533,6 +592,7 @@ export default {
       pathname === "/" ||
       pathname === "/index.html" ||
       pathname === "/api.html" ||
+      pathname === "/docs.html" ||
       pathname === "/styles.css" ||
       pathname === "/app.js" ||
       pathname === "/favicon.ico" ||
