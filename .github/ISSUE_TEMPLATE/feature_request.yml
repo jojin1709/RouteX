@@ -1,0 +1,39 @@
+name: "💡 Feature Request"
+description: "Suggest an idea or new inspector tool for RouteX"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make RouteX even better? We welcome proposals that respect our **100% stateless, zero-persistent-storage** architecture.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: Is your feature request related to a problem or missing workflow?
+      placeholder: "I'm always frustrated when I need to..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented.
+      placeholder: "Add endpoint `GET /api/tools/...` that performs..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+    validations:
+      required: false
+  - type: checkboxes
+    id: stateless-check
+    attributes:
+      label: Architecture Check
+      options:
+        - label: This proposed feature operates completely statelessly (does not require persistent databases like D1 or KV).
+          required: true

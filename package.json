@@ -4,6 +4,25 @@
   "private": true,
   "description": "Stateless privacy-focused web gateway for Cloudflare Workers.",
   "type": "module",
+  "license": "MIT",
+  "author": "JOJIN JOHN <https://github.com/jojin1709>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jojin1709/RouteX.git"
+  },
+  "homepage": "https://routex-web-gateway.apkscope.workers.dev",
+  "bugs": {
+    "url": "https://github.com/jojin1709/RouteX/issues"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "web-gateway",
+    "proxy",
+    "ssrf-protection",
+    "mcp-server",
+    "stateless",
+    "security-tools"
+  ],
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

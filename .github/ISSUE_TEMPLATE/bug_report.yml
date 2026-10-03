@@ -1,0 +1,65 @@
+name: "🐛 Bug Report"
+description: "Report a bug or unexpected behavior in RouteX"
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please check existing issues before submitting.
+  - type: input
+    id: target-url
+    attributes:
+      label: Target URL
+      description: What public URL were you attempting to proxy or inspect?
+      placeholder: "https://example.com"
+    validations:
+      required: false
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - "Core Proxy (/proxy, URL rewriting)"
+        - "Direct Markdown Reader (/r/:url)"
+        - "Stateless Inspector Tools (/api/tools/*)"
+        - "Diagnostics (/diagnostics)"
+        - "Model Context Protocol (/mcp)"
+        - "Daytona Sandbox (/api/tools/render, screenshot, pdf)"
+        - "Web UI & API Catalog (/api, /docs)"
+        - "Security & SSRF Filter"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the issue.
+      placeholder: |
+        1. Query `GET /api/tools/...`
+        2. Notice that the response ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include status code, headers, or error logs).
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have verified this is not a private/loopback SSRF attempt (which RouteX intentionally blocks).
+          required: true
+        - label: I have searched existing issues to ensure this is not a duplicate.
+          required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a Security Vulnerability
+    url: https://github.com/jojin1709/RouteX/security/advisories/new
+    about: Please report security vulnerabilities privately via GitHub Security Advisories.
+  - name: 💬 Ask a Question or Discuss
+    url: https://github.com/jojin1709/RouteX/discussions
+    about: Ask implementation questions or discuss ideas with the maintainer.
